@@ -1,0 +1,18 @@
+# pnpm 配置（本目录是独立的 pnpm 项目，不再是 workspace 成员）。
+# 详见 https://pnpm.io/settings
+
+# pnpm 11 要求用 allowBuilds 显式声明哪些依赖的 install/postinstall 脚本可以运行，
+# 否则会打印 ERR_PNPM_IGNORED_BUILDS 并以退出码 1 失败。
+#
+# sharp             — Next.js 图像优化
+# unrs-resolver     — eslint-import-resolver-typescript 使用的解析器
+# @parcel/watcher   — next-intl 的直接依赖；各平台的 @parcel/watcher-<os>-<arch> 可选依赖已提供预编译产物
+# @swc/core         — next-intl 的直接依赖，postinstall 负责校验/落地平台原生二进制
+allowBuilds:
+  '@parcel/watcher': true
+  '@swc/core': true
+  sharp: true
+  unrs-resolver: true
+
+# 后台或自动化入口没有可供清理确认使用的 TTY；依赖预检可安全重建与当前 pnpm 配置不一致的 node_modules。
+confirmModulesPurge: false

@@ -1,0 +1,132 @@
+# -----------------------------------------------------------------------------
+# 整套服务：PostgreSQL + Redis + 后端 + 前台站点 + 管理后台。
+#
+#   just stack-up      生成 .env.compose（首次，随机密钥）并构建、启动
+#   just stack-down    停止（保留数据）
+#   just stack-reset   停止并删除数据卷（会清空数据库与会话）
+#
+# 与 docker-compose.testing.yml 的区别：那个只放本机开发用的中间件（明文密码、端口暴露）；
+# 这个是完整部署，密码必须由环境文件提供（缺失时 compose 直接报错，不会悄悄用默认值）。
+#
+# 流量走向：浏览器 → edge(3000，前台入口) / admin(8081，管理后台自带 nginx) → backend:8080。
+# edge 与 admin 都是 nginx，它们**覆盖写** X-Forwarded-For，backend 不对外发布端口，所以可以安全地
+# 开启 trust_forwarded_for（限流取该头最右一项）。
+#
+# 注意：不要让浏览器直接访问 web（Next.js）——它的 rewrite 代理不会追加 X-Forwarded-For，客户端发来的
+# 头会原样透传，开着 trust_forwarded_for 就能被伪造来绕过限流。所以 web 不发布端口，只能经 edge 访问。
+# 前面再加一层 HTTPS 反向代理时见 docs/guides/deployment.md。
+# -----------------------------------------------------------------------------
+
+name: tpl
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?请在 .env.compose 里设置 POSTGRES_PASSWORD（just stack-up 会自动生成）}
+      POSTGRES_DB: app
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d app"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    # 会话存在这里：开持久化，重启后用户不会被全部踢下线。
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?请在 .env.compose 里设置 REDIS_PASSWORD}", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: .
+    environment:
+      DATABASE_URL: postgres://app:${POSTGRES_PASSWORD}@postgres:5432/app
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      # 浏览器经 HTTPS 访问时必须为 true（见 docs/guides/deployment.md）；本机 http://localhost 用 false。
+      APP_AUTH__COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      # 前面一定有我们自己的代理（前台 / 管理后台），backend 不对外发布端口，所以可以信任。
+      APP_AUTH__TRUST_FORWARDED_FOR: "true"
+      ADMIN_BOOTSTRAP_USERNAME: ${ADMIN_BOOTSTRAP_USERNAME:-}
+      ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_BOOTSTRAP_PASSWORD:-}
+      APP_LOGGING__FORMAT: ${LOG_FORMAT:-json}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      # 镜像里没有 curl：用 bash 内置的 /dev/tcp 请求 /ready（同时检查 PostgreSQL 与 Redis）。
+      # 必须显式调用 bash：CMD-SHELL 默认用 sh（dash），不支持 /dev/tcp。
+      test:
+        - CMD
+        - bash
+        - -c
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/8080 &&
+          printf 'GET /ready HTTP/1.0\r\n\r\n' >&3 &&
+          head -n 1 <&3 | grep -q ' 200 '
+      # 启动期的失败由 start_period 容忍；之后连续 6 次（约 30 秒）失败才判定为 unhealthy。
+      interval: 5s
+      timeout: 4s
+      retries: 6
+      start_period: 15s
+    restart: unless-stopped
+
+  web:
+    build:
+      context: frontend-public
+      args:
+        # Next 的 rewrites 在构建时固化：改这个值要重新构建镜像。
+        BACKEND_URL: http://backend:8080
+    expose:
+      - "3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+  edge:
+    image: nginx:1.27-alpine
+    environment:
+      BACKEND_UPSTREAM: backend:8080
+      WEB_UPSTREAM: web:3000
+      TRUSTED_PROXY_CIDR: ${TRUSTED_PROXY_CIDR:-127.0.0.1}
+    volumes:
+      - ./deploy/edge.nginx.conf:/etc/nginx/templates/default.conf.template:ro
+    ports:
+      - "${WEB_PORT:-3000}:80"
+    depends_on:
+      web:
+        condition: service_started
+    restart: unless-stopped
+
+  admin:
+    build:
+      context: frontend-admin
+    environment:
+      BACKEND_UPSTREAM: backend:8080
+      TRUSTED_PROXY_CIDR: ${TRUSTED_PROXY_CIDR:-127.0.0.1}
+    ports:
+      - "${ADMIN_PORT:-8081}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  redis-data:

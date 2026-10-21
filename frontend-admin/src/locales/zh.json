@@ -1,0 +1,94 @@
+{
+  "app": {
+    "title": "管理后台",
+    "subtitle": "用户管理",
+    "toggleSidebar": "切换侧边栏"
+  },
+  "common": {
+    "language": "语言",
+    "english": "English",
+    "chinese": "中文",
+    "cancel": "取消",
+    "continue": "继续"
+  },
+  "nav": {
+    "general": "常规",
+    "users": "用户"
+  },
+  "auth": {
+    "signInTitle": "欢迎回来",
+    "signInSubtitle": "请输入管理员用户名和密码",
+    "identifierLabel": "用户名",
+    "passwordLabel": "密码",
+    "submit": "登录",
+    "welcomeBack": "欢迎回来，{{name}}",
+    "brandHeadline": "管理后台",
+    "brandDescription": "查看注册用户，并启用或禁用他们的账号。",
+    "brandPoint1": "搜索、筛选注册用户",
+    "brandPoint2": "禁用账号立即生效",
+    "brandPoint3": "管理员与普通用户完全隔离",
+    "copyright": "© {{year}} 管理后台。保留所有权利。"
+  },
+  "users": {
+    "title": "用户",
+    "description": "管理注册用户的状态。",
+    "searchPlaceholder": "按邮箱搜索…",
+    "search": "搜索",
+    "filterAll": "全部状态",
+    "filterActive": "正常",
+    "filterDisabled": "已禁用",
+    "colEmail": "邮箱",
+    "colStatus": "状态",
+    "colCreatedAt": "注册时间",
+    "colActions": "操作",
+    "statusActive": "正常",
+    "statusDisabled": "已禁用",
+    "loading": "加载中…",
+    "loadFailed": "加载用户失败",
+    "empty": "暂无用户",
+    "disable": "禁用",
+    "enable": "启用",
+    "disableTitle": "禁用用户",
+    "enableTitle": "启用用户",
+    "disableDescription": "禁用后，{{email}} 将无法登录，当前会话立即失效。",
+    "enableDescription": "启用后，{{email}} 可以重新登录。",
+    "confirm": "确认",
+    "disabledToast": "已禁用 {{email}}",
+    "enabledToast": "已启用 {{email}}",
+    "pageSummary": "共 {{total}} 位用户 · 第 {{page}}/{{pages}} 页",
+    "previous": "上一页",
+    "next": "下一页"
+  },
+  "userMenu": {
+    "account": "账号菜单",
+    "signOut": "退出登录",
+    "signOutTitle": "退出登录",
+    "signOutDescription": "确定要退出登录吗？退出后需要重新登录才能访问。",
+    "signOutConfirm": "退出",
+    "signOutSuccess": "已退出登录"
+  },
+  "commandMenu": {
+    "placeholder": "输入命令或搜索…",
+    "empty": "没有匹配结果。",
+    "theme": "主题",
+    "light": "浅色",
+    "dark": "深色",
+    "system": "跟随系统"
+  },
+  "errors": {
+    "identifierRequired": "请输入用户名",
+    "passwordRequired": "请输入密码"
+  },
+  "apiErrors": {
+    "unknown": "出错了，请稍后重试。",
+    "invalid_credentials": "用户名或密码不正确",
+    "too_many_attempts": "尝试次数过多，请稍后再试",
+    "unauthenticated": "登录已过期，请重新登录",
+    "account_disabled": "该账号已被禁用",
+    "admin_unavailable": "服务端未启用管理后台",
+    "not_found": "请求的内容不存在",
+    "invalid_parameter": "请求参数不正确",
+    "unsupported_media_type": "不支持的请求格式",
+    "internal_error": "服务器出错了，请稍后重试"
+  }
+}

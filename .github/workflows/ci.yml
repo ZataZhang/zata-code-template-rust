@@ -1,0 +1,195 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # 通用文件卫生（行尾空格、文件末尾换行、yaml/toml/json 语法、大文件、合并冲突标记）。
+  # Rust 与前端的检查由下面各自的任务负责，这里跳过，避免重复。
+  hooks:
+    name: Pre-commit hygiene
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install pre-commit
+        run: pipx install pre-commit
+      - name: Run hooks on all files
+        env:
+          SKIP: rust-fmt,rust-clippy,architecture-guard,web-typecheck-lint,web-admin-typecheck-lint,i18n-keys,commit-msg-format,prd-archive-gate,prd-lock-conflict,max-file-lines,guard-test-modification
+        run: pre-commit run --all-files --show-diff-on-failure
+
+  rust:
+    name: Rust (lint, tests, docs)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SQLX_OFFLINE: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - name: Lint (cargo fmt + clippy, warnings are errors)
+        run: just lint
+      - name: Build docs (warnings are errors)
+        run: just doc
+      - name: File length hard limit (1000 non-empty lines)
+        run: just check-lines
+      - name: Archived PRDs are archive-ready
+        run: cargo xtask prd check --archived
+      # 真实的 PostgreSQL 与 Redis（端口 5433 / 6390，与本地开发一致，所以测试连接串不用改）。
+      - name: Start PostgreSQL and Redis
+        run: just db-up
+      - name: Tests, including the ones that need real services
+        run: just test all
+
+  web:
+    name: Frontend (typecheck, lint, build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend-public
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: frontend-public/package.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: frontend-public/pnpm-lock.yaml
+      # 纯静态 JSON 校验，不需要装依赖，放最前面让缺 key 秒级拦红。
+      - name: Check i18n message key alignment
+        working-directory: .
+        run: node scripts/check-i18n-keys.mjs
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm lint
+      # 构建期不需要后端：所有路由都是动态渲染，不会在构建时调用后端。
+      - run: pnpm build
+
+  web-admin:
+    name: Admin frontend (typecheck, lint, unused code, tests, build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend-admin
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: frontend-admin/package.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: frontend-admin/pnpm-lock.yaml
+      - name: Check i18n message key alignment
+        working-directory: .
+        run: node scripts/check-i18n-keys.mjs
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm knip
+      - run: pnpm format:check
+      - run: pnpm build
+      - name: Install Chromium for component tests
+        run: pnpm test:browser:install
+      - run: pnpm test
+
+  # 真实浏览器端到端：Chrome -> Next.js -> Rust 后端 -> PostgreSQL / Redis。
+  # 放在 rust 与 web 之后，基础检查都没过时不浪费这十几分钟。
+  web-e2e:
+    name: Browser end-to-end
+    needs: [rust, web, web-admin]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: frontend-public/package.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: frontend-public/pnpm-lock.yaml
+      - run: just web-install
+      - run: just web-admin-install
+      - name: Show Chrome version
+        run: google-chrome --version
+      - name: Run browser tests
+        env:
+          SHOT_DIR: ${{ runner.temp }}/e2e-shots
+        run: just web-e2e
+      - name: Upload screenshots
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-screenshots-${{ github.run_id }}
+          path: ${{ runner.temp }}/e2e-shots
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # 整套服务：docker-compose.yml 真的能拉起来，并通过冒烟测试（入口、登录与停用、
+  # 伪造 X-Forwarded-For 不能绕过限流、备份与恢复）。
+  stack:
+    name: Full stack (compose smoke test)
+    needs: [rust, web, web-admin]
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+      - name: Start the full stack
+        run: |
+          ./scripts/stack-env.sh
+          docker compose --env-file .env.compose up -d --build --wait
+      - name: Smoke test
+        run: ./scripts/stack-smoke.sh
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose --env-file .env.compose logs --no-color --tail=200
+      - name: Tear down
+        if: always()
+        run: docker compose --env-file .env.compose down -v
+
+  # 三个镜像能构建出来（不推送）。
+  docker:
+    name: Docker images build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build backend image
+        run: docker build -t tpl-app:ci .
+      - name: Build frontend image
+        run: docker build --build-arg BACKEND_URL=http://backend:8080 -t tpl-web:ci frontend-public
+      - name: Build admin frontend image
+        run: docker build -t tpl-admin:ci frontend-admin

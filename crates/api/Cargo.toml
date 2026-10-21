@@ -1,0 +1,30 @@
+[package]
+name = "tpl-api"
+description = "接入层：HTTP 路由、参数校验与 DTO 转换，只依赖 core。"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+tpl-core.workspace = true
+
+axum.workspace = true
+axum-extra.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+time.workspace = true
+tower-http.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+# 测试用的内存替身（明文哈希器等），只在测试里启用 core 的 `testing` feature。
+tpl-core = { workspace = true, features = ["testing"] }
+
+async-trait.workspace = true
+http-body-util.workspace = true
+tokio = { workspace = true }
+tower = { workspace = true, features = ["util"] }
+
+[lints]
+workspace = true

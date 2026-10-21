@@ -1,0 +1,12 @@
+# This allowlist contains reusable Rust-agent workflow files only.
+# Add a path here when it is safe to overwrite that path in derived projects.
+AGENTS.md
+CLAUDE.md
+.template-sync
+.pre-commit-config.yaml
+docs/ai-standards
+docs/guides/idea-inbox.md
+docs/guides/prd-workflow.md
+skills/idea-inbox
+skills/prd
+tools/xtask

@@ -1,0 +1,40 @@
+# Rust 构建产物
+/target/
+
+# 环境文件：忽略所有 .env*，只保留 *.example
+.env*
+!.env*.example
+
+# 前端构建产物与依赖
+node_modules/
+.next/
+*.tsbuildinfo
+
+# 日志
+logs/
+*.log
+
+# 编辑器与系统文件
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# 本地 SQLite 之类的临时数据库
+*.db
+*.db-journal
+
+# 本地 AI 工具状态
+.claude/settings.local.json
+
+# PRD 验证证据包：只提交文本报告（*.md：verification-plan / evidence-report / verifier-report / human-review-checklist），
+# 原始产物（截图、录屏、抓取的输出、大日志）和执行锁只留在本地——二进制会让仓库膨胀，原始输出还可能夹带密钥，
+# 一旦进了 git 历史就删不干净。
+tasks/evidence/**
+!tasks/evidence/**/
+!tasks/evidence/**/*.md
+
+# 整套服务的环境文件（含随机生成的密钥）与数据库备份
+.env.compose
+backups/

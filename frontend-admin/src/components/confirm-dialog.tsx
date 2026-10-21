@@ -1,0 +1,80 @@
+import { useTranslation } from 'react-i18next'
+import { cn } from '@/lib/utils'
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { Button } from '@/components/ui/button'
+
+type ConfirmDialogProps = {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  title: React.ReactNode
+  disabled?: boolean
+  desc: React.JSX.Element | string
+  cancelBtnText?: string
+  confirmText?: React.ReactNode
+  destructive?: boolean
+  isLoading?: boolean
+  className?: string
+  children?: React.ReactNode
+} & (
+  | { form: string; handleConfirm?: undefined }
+  | { form?: undefined; handleConfirm: () => void }
+)
+
+/**
+ * Render the ConfirmDialog component.
+ *
+ * 按钮文案默认走 i18n：调用方未显式传入 `cancelBtnText` / `confirmText` 时使用
+ * `common.cancel` / `common.continue`，避免通用确认弹窗在中文界面里残留英文。
+ */
+export function ConfirmDialog(props: ConfirmDialogProps) {
+  const { t } = useTranslation()
+  const {
+    title,
+    desc,
+    children,
+    className,
+    confirmText,
+    cancelBtnText,
+    destructive,
+    isLoading,
+    disabled = false,
+    form,
+    handleConfirm,
+    ...actions
+  } = props
+  return (
+    <AlertDialog {...actions}>
+      <AlertDialogContent className={cn(className && className)}>
+        <AlertDialogHeader className='text-start'>
+          <AlertDialogTitle>{title}</AlertDialogTitle>
+          <AlertDialogDescription asChild>
+            <div>{desc}</div>
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        {children}
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={isLoading}>
+            {cancelBtnText ?? t('common.cancel')}
+          </AlertDialogCancel>
+          <Button
+            type={form ? 'submit' : 'button'}
+            form={form}
+            onClick={handleConfirm}
+            variant={destructive ? 'destructive' : 'default'}
+            disabled={disabled || isLoading}
+          >
+            {confirmText ?? t('common.continue')}
+          </Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  )
+}

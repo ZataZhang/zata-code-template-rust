@@ -1,0 +1,50 @@
+# -----------------------------------------------------------------------------
+# 本地开发与测试用的中间件（PostgreSQL、Redis）。
+# 仅用于本机，密码明文写入，不要用于生产环境。
+#
+#   just db-up      启动
+#   just db-down    停止（保留数据）
+#   just db-reset   停止并删除数据卷
+#
+# 连接串：
+#   DATABASE_URL=postgres://testuser:testpass@localhost:5433/testdb
+#   REDIS_URL=redis://:redis123@localhost:6390/0
+#
+# 端口特意用 5433 / 6390，避开本机上其他项目常用的 5432 / 6379；
+# 不写 container_name，避免和别的 compose 项目的容器重名。
+# -----------------------------------------------------------------------------
+
+name: tpl-testing
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    ports:
+      - "127.0.0.1:5433:5432"
+    environment:
+      POSTGRES_USER: testuser
+      POSTGRES_PASSWORD: testpass
+      POSTGRES_DB: testdb
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U testuser -d testdb"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "127.0.0.1:6390:6379"
+    command: redis-server --requirepass redis123
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "redis123", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+    restart: unless-stopped
+
+volumes:
+  postgres-data:

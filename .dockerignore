@@ -1,0 +1,12 @@
+target/
+frontend-public/
+frontend-admin/
+.git/
+.env*
+!.env*.example
+docs/
+tasks/
+skills/
+*.md
+!README.md
+.DS_Store

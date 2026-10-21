@@ -1,0 +1,119 @@
+# 提交前检查（pre-commit 框架：https://pre-commit.com）。
+#
+# 安装（只需一次）：just hooks
+# 手动对全部文件跑一遍：pre-commit run --all-files
+#
+# 设计取舍：提交前只放「快、且能在本机确定结果」的检查。完整的测试（含真实数据库/浏览器）在 CI 里跑，
+# 不放进钩子——钩子太慢会让人习惯性地 `--no-verify` 绕过，反而什么都拦不住。
+
+# 一次安装两个阶段的钩子：提交前检查 + 提交信息检查
+default_install_hook_types: [pre-commit, commit-msg]
+
+# 不检查：
+# - 依赖与构建产物
+# - 锁文件（工具生成，不应手工改）
+# - migrations/：sqlx 会记录每个已应用迁移的校验和，文件卫生类钩子改写它们会让迁移校验失败
+exclude: '^(frontend-[a-z]+/(node_modules|\.next)/|migrations/|.*pnpm-lock\.yaml$|Cargo\.lock$)'
+
+repos:
+  # ==========================================
+  # 1. 通用文件卫生（与语言无关）
+  # ==========================================
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        # Markdown 里行尾两个空格是「强制换行」，不能删
+        args: [--markdown-linebreak-ext=md]
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=5000]
+
+  # ==========================================
+  # 2. 本项目的检查
+  # ==========================================
+  - repo: local
+    hooks:
+      - id: rust-fmt
+        name: cargo fmt（格式检查）
+        entry: cargo fmt --all --check
+        language: system
+        files: '\.rs$'
+        pass_filenames: false
+
+      - id: rust-clippy
+        name: cargo clippy（警告即失败）
+        entry: cargo clippy --workspace --all-targets -- -D warnings
+        language: system
+        # Cargo.toml / Cargo.lock 变了（依赖方向、版本）也要重跑，所以不只看 .rs
+        files: '(\.rs$|(^|/)Cargo\.(toml|lock)$|^clippy\.toml$)'
+        pass_filenames: false
+
+      - id: architecture-guard
+        name: 层间依赖方向守卫测试（改了 Cargo.toml 时）
+        entry: cargo test -p tpl-app --test architecture
+        language: system
+        # clippy 拦不住「把违规依赖写进 Cargo.toml」，这个测试可以
+        files: '(^|/)Cargo\.toml$'
+        pass_filenames: false
+
+      - id: web-typecheck-lint
+        name: 前端类型检查 + lint
+        entry: bash -c 'cd frontend-public && pnpm typecheck && pnpm lint'
+        language: system
+        files: '^frontend-public/'
+        exclude: '^frontend-public/(e2e/|README\.md$)'
+        pass_filenames: false
+
+      - id: web-admin-typecheck-lint
+        name: 管理后台类型检查 + lint
+        entry: bash -c 'cd frontend-admin && pnpm typecheck && pnpm lint'
+        language: system
+        files: '^frontend-admin/'
+        exclude: '^frontend-admin/(README\.md$|LICENSE$)'
+        pass_filenames: false
+
+      - id: i18n-keys
+        name: 前端 en/zh 文案 key 对齐
+        entry: node scripts/check-i18n-keys.mjs
+        language: system
+        files: '^frontend-[a-z]+/(messages|src/locales)/.*\.json$'
+        pass_filenames: false
+
+      - id: prd-archive-gate
+        name: PRD 归档门禁（新归档的 PRD）
+        entry: cargo xtask hook check-prd
+        language: system
+        # 只对 tasks/ 根目录与 tasks/archive/ 下 PRD 形状的文件触发；pending 里的 PRD 可以保留空框
+        files: '^tasks/(?:archive/)?(?:[^/]+-prd-[^/]+|P[0-3]-[A-Z]+-\d{8}-\d{6}-[^/]+)\.md$'
+
+      - id: prd-lock-conflict
+        name: PRD 执行锁冲突（只警告，不阻断）
+        entry: cargo xtask hook lock-conflict --warn-only
+        language: system
+        files: '^tasks/(pending|evidence)/'
+
+      - id: max-file-lines
+        name: 单文件非空行上限 1000（只警告；CI 里是硬上限）
+        entry: cargo xtask hook max-lines --max-lines 1000 --warn-only
+        language: system
+        files: '\.(rs|ts|tsx)$'
+        exclude: '^frontend-public/components/ui/'
+
+      - id: guard-test-modification
+        name: 修改守卫测试需要 GUARD_UPDATE_ACK=1
+        entry: cargo xtask hook guard-tests
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+
+      - id: commit-msg-format
+        name: 提交信息格式（Conventional Commits、英文标题、≤72 字符）
+        entry: scripts/check-commit-msg.sh
+        language: system
+        stages: [commit-msg]

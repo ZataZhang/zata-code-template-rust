@@ -1,0 +1,21 @@
+[package]
+name = "tpl-core"
+description = "核心编排层：用例、领域规则与端口（trait）。不依赖任何其他内部 crate。"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[features]
+# 内存版的端口替身（仅用于测试），让 core 与 api 的测试不依赖任何外部服务。
+testing = []
+
+[dependencies]
+async-trait.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true }
+
+[lints]
+workspace = true

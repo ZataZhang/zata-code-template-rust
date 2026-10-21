@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(*) AS \"count!\" FROM users\n               WHERE ($1::text IS NULL OR status = $1)\n                 AND ($2::text IS NULL OR email ILIKE '%' || $2 || '%' ESCAPE '\\')",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "700317e75584b089e2abee5771f26f7c52dfba926359311cea59f8416dfcfe03"
+}

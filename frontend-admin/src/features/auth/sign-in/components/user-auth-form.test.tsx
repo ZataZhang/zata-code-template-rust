@@ -1,0 +1,124 @@
+// 表单文案与校验消息都来自 i18next，因此测试必须先初始化 i18n 并固定语言，
+// 否则断言会随运行环境（navigator / localStorage）漂移。
+import i18n from '@/i18n/init'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { render, type RenderResult } from 'vitest-browser-react'
+import { type Locator, userEvent } from 'vitest/browser'
+import { login, type UserSession } from '@/api/auth'
+import { UserAuthForm } from './user-auth-form'
+
+const FORM_MESSAGES = {
+  identifierEmpty: '请输入用户名',
+  passwordEmpty: '请输入密码',
+} as const
+
+/** 本用例断言的文案取自中文语言包。 */
+const TEST_LOCALE = 'zh'
+
+const MOCK_SESSION: UserSession = {
+  user_id: 'user-1',
+  display_name: 'Admin User',
+  username: 'admin',
+}
+
+const navigate = vi.fn()
+const setUserMock = vi.fn()
+
+vi.mock('@/stores/auth-store', () => ({
+  useAuthStore: () => ({
+    auth: {
+      setUser: setUserMock,
+    },
+  }),
+}))
+
+vi.mock('@/api/auth', () => ({
+  login: vi.fn(),
+}))
+
+vi.mock('@tanstack/react-router', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@tanstack/react-router')>()
+  return {
+    ...actual,
+    useNavigate: () => navigate,
+  }
+})
+
+describe('UserAuthForm', () => {
+  describe('Rendering without redirectTo', () => {
+    let screen: RenderResult
+    let identifierInput: Locator
+    let passwordInput: Locator
+    let signInButton: Locator
+
+    beforeEach(async () => {
+      vi.clearAllMocks()
+      await i18n.changeLanguage(TEST_LOCALE)
+      screen = await render(<UserAuthForm />)
+      identifierInput = screen.getByRole('textbox', { name: /用户名/ })
+      passwordInput = screen.getByLabelText('密码')
+      signInButton = screen.getByRole('button', { name: /^登录$/ })
+    })
+
+    it('renders fields and the submit button', async () => {
+      await expect.element(identifierInput).toBeInTheDocument()
+      await expect.element(passwordInput).toBeInTheDocument()
+      await expect.element(signInButton).toBeInTheDocument()
+    })
+
+    it('shows validation messages when submitting empty form', async () => {
+      await userEvent.click(signInButton)
+
+      await expect
+        .element(screen.getByText(FORM_MESSAGES.identifierEmpty))
+        .toBeInTheDocument()
+      await expect
+        .element(screen.getByText(FORM_MESSAGES.passwordEmpty))
+        .toBeInTheDocument()
+    })
+
+    it('authenticates and navigates to default route on success', async () => {
+      vi.mocked(login).mockResolvedValue(MOCK_SESSION)
+
+      await userEvent.fill(identifierInput, 'admin')
+      await userEvent.fill(passwordInput, '1234567')
+
+      await userEvent.click(signInButton)
+
+      await vi.waitFor(() => expect(setUserMock).toHaveBeenCalledOnce())
+      expect(login).toHaveBeenCalledWith({
+        identifier: 'admin',
+        password: '1234567',
+      })
+      expect(setUserMock).toHaveBeenCalledWith(MOCK_SESSION)
+
+      await vi.waitFor(() =>
+        expect(navigate).toHaveBeenCalledWith({ to: '/', replace: true })
+      )
+    })
+  })
+
+  it('navigates to redirectTo when provided', async () => {
+    vi.clearAllMocks()
+    vi.mocked(login).mockResolvedValue(MOCK_SESSION)
+    await i18n.changeLanguage(TEST_LOCALE)
+
+    const { getByRole, getByLabelText } = await render(
+      <UserAuthForm redirectTo='/users?page=2' />
+    )
+
+    await userEvent.fill(getByRole('textbox', { name: /用户名/ }), 'admin')
+    await userEvent.fill(getByLabelText('密码'), '1234567')
+
+    await userEvent.click(getByRole('button', { name: /^登录$/ }))
+
+    await vi.waitFor(() => expect(setUserMock).toHaveBeenCalledOnce())
+
+    await vi.waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith({
+        href: '/users?page=2',
+        replace: true,
+      })
+    )
+  })
+})

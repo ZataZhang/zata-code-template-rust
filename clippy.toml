@@ -1,0 +1,3 @@
+# 测试里允许 unwrap/expect：测试失败时 panic 信息就是我们想要的。
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true

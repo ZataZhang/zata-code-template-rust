@@ -1,0 +1,31 @@
+[package]
+name = "tpl-infrastructure"
+description = "基础设施层：配置、日志、数据库等具体实现，并实现 core 定义的端口。"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+tpl-core.workspace = true
+
+argon2.workspace = true
+async-trait.workspace = true
+dotenvy.workspace = true
+figment.workspace = true
+getrandom.workspace = true
+redis.workspace = true
+serde.workspace = true
+sha2.workspace = true
+sqlx.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true }
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+# Jail 能在测试里安全地隔离环境变量与当前目录。
+figment = { workspace = true, features = ["test"] }
+
+[lints]
+workspace = true

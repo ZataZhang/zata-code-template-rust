@@ -1,0 +1,94 @@
+{
+  "app": {
+    "title": "Admin Console",
+    "subtitle": "User management",
+    "toggleSidebar": "Toggle sidebar"
+  },
+  "common": {
+    "language": "Language",
+    "english": "English",
+    "chinese": "中文",
+    "cancel": "Cancel",
+    "continue": "Continue"
+  },
+  "nav": {
+    "general": "General",
+    "users": "Users"
+  },
+  "auth": {
+    "signInTitle": "Welcome back",
+    "signInSubtitle": "Enter your administrator username and password",
+    "identifierLabel": "Username",
+    "passwordLabel": "Password",
+    "submit": "Sign in",
+    "welcomeBack": "Welcome back, {{name}}",
+    "brandHeadline": "Admin console",
+    "brandDescription": "Look up registered users and enable or disable their accounts.",
+    "brandPoint1": "Search and filter registered users",
+    "brandPoint2": "Disabling an account takes effect immediately",
+    "brandPoint3": "Administrators are isolated from ordinary users",
+    "copyright": "© {{year}} Admin Console. All rights reserved."
+  },
+  "users": {
+    "title": "Users",
+    "description": "Manage the status of registered users.",
+    "searchPlaceholder": "Search by email…",
+    "search": "Search",
+    "filterAll": "All statuses",
+    "filterActive": "Active",
+    "filterDisabled": "Disabled",
+    "colEmail": "Email",
+    "colStatus": "Status",
+    "colCreatedAt": "Registered",
+    "colActions": "Actions",
+    "statusActive": "Active",
+    "statusDisabled": "Disabled",
+    "loading": "Loading…",
+    "loadFailed": "Failed to load users",
+    "empty": "No users found",
+    "disable": "Disable",
+    "enable": "Enable",
+    "disableTitle": "Disable user",
+    "enableTitle": "Enable user",
+    "disableDescription": "After disabling, {{email}} can no longer sign in and the current session ends immediately.",
+    "enableDescription": "After enabling, {{email}} can sign in again.",
+    "confirm": "Confirm",
+    "disabledToast": "Disabled {{email}}",
+    "enabledToast": "Enabled {{email}}",
+    "pageSummary": "{{total}} users · page {{page}} of {{pages}}",
+    "previous": "Previous",
+    "next": "Next"
+  },
+  "userMenu": {
+    "account": "Account menu",
+    "signOut": "Sign out",
+    "signOutTitle": "Sign out",
+    "signOutDescription": "Are you sure you want to sign out? You will need to sign in again to continue.",
+    "signOutConfirm": "Sign out",
+    "signOutSuccess": "Signed out"
+  },
+  "commandMenu": {
+    "placeholder": "Type a command or search…",
+    "empty": "No results found.",
+    "theme": "Theme",
+    "light": "Light",
+    "dark": "Dark",
+    "system": "System"
+  },
+  "errors": {
+    "identifierRequired": "Please enter your username",
+    "passwordRequired": "Please enter your password"
+  },
+  "apiErrors": {
+    "unknown": "Something went wrong. Please try again.",
+    "invalid_credentials": "Incorrect username or password",
+    "too_many_attempts": "Too many attempts. Please try again later.",
+    "unauthenticated": "Your session has expired. Please sign in again.",
+    "account_disabled": "This account has been disabled",
+    "admin_unavailable": "The admin console is not enabled on the server",
+    "not_found": "The requested item does not exist",
+    "invalid_parameter": "Invalid request parameter",
+    "unsupported_media_type": "Unsupported request format",
+    "internal_error": "Server error. Please try again later."
+  }
+}

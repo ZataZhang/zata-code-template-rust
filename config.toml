@@ -1,0 +1,54 @@
+# 非敏感默认值。优先级：代码默认值 < 本文件 < 环境变量。
+#
+# - 覆盖单个值：APP_<分区>__<字段>，双下划线表示层级，如 APP_SERVER__PORT=9000
+# - 密钥与连接串（含密码）不要写在这里，放 .env.local 或部署平台的环境变量
+# - 指定别的配置文件：APP_CONFIG_FILE=/path/to/config.toml
+
+[server]
+host = "127.0.0.1" # 容器里要改成 "0.0.0.0"（Dockerfile 已通过环境变量处理）
+port = 8080
+
+[logging]
+level = "info"   # 也可用 RUST_LOG 覆盖，如 RUST_LOG=tpl_api=debug,info
+format = "text"  # "text"（本地阅读）或 "json"（日志采集）
+
+[database]
+# url 来自环境变量 DATABASE_URL。配置后启动时会自动执行 migrations/ 下的迁移，所以启动时数据库必须可达。
+max_connections = 10
+acquire_timeout_secs = 3
+
+[redis]
+# url 来自环境变量 REDIS_URL，用作会话存储。
+timeout_secs = 3 # 单次操作（含首次建立连接）的超时
+
+# 认证（注册/登录/会话）需要 DATABASE_URL 和 REDIS_URL 同时配置；缺任何一个，/auth/* 返回 503，其余功能不受影响。
+[auth]
+session_ttl_secs = 604800 # 会话有效期，7 天；同时是 Cookie 的 Max-Age
+cookie_name = "session"
+cookie_secure = false     # 本地 HTTP 开发用 false；生产（HTTPS）必须改成 true：APP_AUTH__COOKIE_SECURE=true
+
+# 登录/注册限流（计数存 Redis，多实例共享；固定窗口）。被限流时返回 429 并带 Retry-After。
+# 开发时在本机反复注册/试错可能触发限制，调大这些值或等窗口结束即可。
+login_max_failures_per_ip = 20       # 同一 IP 在窗口内允许的登录失败次数（挡撞库）
+login_max_failures_per_account = 10  # 同一账号（不论哪个 IP）在窗口内允许的失败次数（挡分布式猜密码）
+login_window_secs = 900              # 15 分钟
+register_max_per_ip = 10             # 同一 IP 在窗口内允许的注册请求次数（成败都算）
+register_window_secs = 3600          # 1 小时
+
+# 只有服务确实部署在会**覆盖写或追加** X-Forwarded-For 的反向代理之后、且外部无法绕过代理直连时，才能设为 true；
+# 否则攻击者可以随便填这个头来绕过按 IP 的限流。开启后取该头最右边的地址（由你的代理写入）。
+# 注意：Next.js 的 rewrite 代理只是原样透传该头，不满足条件，前面必须有 nginx / Traefik 等（见 docs/guides/deployment.md）。
+trust_forwarded_for = false
+
+# 管理后台。管理员与普通用户完全隔离：独立的账号表、会话 Cookie（名字必须不同）与限流计数。
+# Cookie 的 Secure 属性、是否信任代理头沿用上面 [auth] 的设置。
+# 管理员没有注册入口，只能靠引导账号创建：同时设置环境变量
+#   ADMIN_BOOTSTRAP_USERNAME 与 ADMIN_BOOTSTRAP_PASSWORD（或 APP_ADMIN__BOOTSTRAP_*），
+# 启动时创建；账号已存在则什么都不改（绝不覆盖密码）。密码是密钥，不要写进本文件。
+# 没有配置过任何管理员时，/admin/* 的登录永远失败，其余功能不受影响。
+[admin]
+session_ttl_secs = 43200              # 12 小时；比普通用户短，管理权限泄露的代价更大
+cookie_name = "admin_session"
+login_max_failures_per_ip = 10        # 比普通登录更严
+login_max_failures_per_account = 5
+login_window_secs = 900
