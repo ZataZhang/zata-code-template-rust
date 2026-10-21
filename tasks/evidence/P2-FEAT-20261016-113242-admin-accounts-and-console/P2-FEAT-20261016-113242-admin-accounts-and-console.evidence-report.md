@@ -12,6 +12,8 @@
 
 PR：[GitHub PR 列表](https://github.com/ZataZhang/zata-code-template-rust/pulls)（当前未开 PR）；CI：[GitHub Actions](https://github.com/ZataZhang/zata-code-template-rust/actions)。
 
+首次真实 GitHub runner：7/7 个 job 全部通过（[run 39584333354](https://github.com/ZataZhang/zata-code-template-rust/actions/runs/39584333354)）。
+
 **执行方已交叉核对：** 最近一次 `SHOT_DIR=$PWD/target/e2e-shots just web-e2e` 的真实 Chrome 输出为公开站点 `20/20 passed`、管理后台 `33/33 项通过`；本地已逐张查看以上 6 张页面截图。限流截图在页面刷新后重新发起正确密码登录，明确等待前台提示完成动画后采集，避免旧 toast 遮挡。
 
 ## 交付与验证记录
@@ -22,7 +24,7 @@ PR：[GitHub PR 列表](https://github.com/ZataZhang/zata-code-template-rust/pul
 - 交互清单在隔离的 Chrome 会话中完成真实浏览器检查：新会话首屏无预选答案，4 个决定可逐页选择，结果页生成包含四项内容的 Markdown，未发生页面脚本错误。渲染预览为 `human-review-checklist-preview.png`（本地证据，不提交 Git）。
 - 本地验证：`SQLX_OFFLINE=true cargo check --workspace --all-targets --locked`、`just sqlx-prepare`、`just prd check --archived`、`just test all`、`just ci-all` 均通过；真实 PostgreSQL/Redis 用例包括管理员控制台、管理员限流及用户会话流程。
 - 并行测试修复：E2E 测试数据 ID 加入进程号与原子序号，防止同一时钟刻度生成重复管理员账号；模板复制另增加忽略本地状态文件和拒绝跟随目标符号链接的检查。
-- GitHub Actions 首次真实 runner 尚待本地提交推送后回填。
+- GitHub Actions 首次真实 runner 于 2026-10-21 通过：Pre-commit hygiene、Rust（含真实 PostgreSQL/Redis 测试）、前台、管理后台、浏览器 E2E、Docker 镜像和整栈 compose 冒烟全部成功。
 
 ## 人工确认回复
 

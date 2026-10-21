@@ -2,7 +2,7 @@
 
 本仓库是 `zata_code_template`（Python / FastAPI）的 Rust 版。迁移**分阶段**进行，先做一条最小竖切跑通，再逐步搬。本页记录已经迁移的、刻意推迟的，以及推迟的原因，便于接着做。
 
-> 状态更新日期：2026-10-21。阶段 1（骨架）、2（认证竖切，含限流）、3（前台站点）、4（PRD 工具链，Rust 重写）、5（管理员账号与管理后台）、6（部署、配置与备份）已完成；本次补齐 Rust 模板复制/同步和 SQLx 编译期查询校验。GitHub CI 的首次真实 runner 结果待本次推送后回填。
+> 状态更新日期：2026-10-21。阶段 1（骨架）、2（认证竖切，含限流）、3（前台站点）、4（PRD 工具链，Rust 重写）、5（管理员账号与管理后台）、6（部署、配置与备份）已完成；本次补齐 Rust 模板复制/同步和 SQLx 编译期查询校验。GitHub CI 首次真实 runner 的 7 个 job 全部通过：[run 39584333354](https://github.com/ZataZhang/zata-code-template-rust/actions/runs/39584333354)。
 
 ## 已迁移
 
@@ -133,9 +133,9 @@
 
 ## 建议的下一步
 
-1. 把仓库推到 GitHub，确认 CI 首次运行通过（留意 Ubuntu 环境差异，见 `docs/ai-standards/tooling.md`）。
+1. ✅ 已推送到公开 GitHub 仓库，首次 CI 的 7 个 job 全部通过（[run 39584333354](https://github.com/ZataZhang/zata-code-template-rust/actions/runs/39584333354)）。
 2. 管理后台目前只有用户管理；有新的运营需求时，再用 PRD 工作流往里加页面（别把演示页面加回来）。
-4. 上生产前的清单：`APP_AUTH__COOKIE_SECURE=true`；前台站点必须经 nginx 等会覆盖写 `X-Forwarded-For` 的代理访问（Next.js 自己不会写，见 `docs/guides/deployment.md`）；`just stack-up` 的 compose 已按此配置。
+3. 上生产前的清单：`APP_AUTH__COOKIE_SECURE=true`；前台站点必须经 nginx 等会覆盖写 `X-Forwarded-For` 的代理访问（Next.js 自己不会写，见 `docs/guides/deployment.md`）；`just stack-up` 的 compose 已按此配置。
 
 ## 给项目重命名
 
