@@ -62,7 +62,7 @@ description: "Rust 项目的合并前评审：覆盖安全、代码质量、可�
 - 数据库写路径或迁移相关变化
 - 外部 API 或 webhook 集成变化
 
-触及接口边界时，找这些证据：自动化的 API / 集成测试（如 `crates/api/tests/` 里用 `tower::ServiceExt::oneshot` 走完整路由）、真实进程的 `curl` 冒烟记录、e2e 覆盖。只有单元测试通常不够；没有接口级证据，即使代码看起来正确也要报验证缺口。
+触及接口边界时，找这些证据：自动化的 API / 集成测试（如 `services/accounts/crates/api/tests/` 里用 `tower::ServiceExt::oneshot` 走完整路由）、真实进程的 `curl` 冒烟记录、e2e 覆盖。只有单元测试通常不够；没有接口级证据，即使代码看起来正确也要报验证缺口。
 
 ## Repository Validation Commands
 
@@ -213,7 +213,7 @@ state.lock().unwrap().counter += delta;
 
 ```text
 [HIGH][requirement] 缺少 PRD 要求的导出流程
-文件: crates/api/src/export.rs:88
+文件: services/accounts/crates/api/src/export.rs:88
 影响: 任务要求支持 CSV 和 JSON 导出，但实现仅添加了 CSV。
 依据: tasks/pending/xxx.md 明确说明两种格式均在范围内。
 修复建议: 在合并前实现 JSON 分支，或收窄需求范围。
@@ -260,7 +260,7 @@ state.lock().unwrap().counter += delta;
     {
       "category": "requirement|code|validation|docs",
       "severity": "critical|high|medium|low",
-      "file": "crates/api/src/example.rs",
+      "file": "services/accounts/crates/api/src/example.rs",
       "line": 42,
       "title": "简短标题",
       "description": "为什么是问题",

@@ -16,7 +16,7 @@
 | 标准页 | 何时必须读 | 何时可以跳过 |
 |---|---|---|
 | `docs/ai-standards/index.md` | 任何任务开始时；需求、方案与任务规划讨论时核对其中的 ROI 原则 | 永远不跳过 |
-| `docs/ai-standards/architecture.md` | 新增/修改 `crates/` 下的模块、增删或修改任何 `Cargo.toml` 的 `[dependencies]`、新增端口或实现、新增对外 HTTP 入口 | 只改文档、测试、构建脚本时 |
+| `docs/ai-standards/architecture.md` | 新增/修改 `services/*/crates/` 下的模块、增删或修改任何 `Cargo.toml` 的 `[dependencies]`、新增端口或实现、新增对外 HTTP 入口 | 只改文档、测试、构建脚本时 |
 | `docs/architecture/system-design.md` | 开始**任何**新的后端功能、新增层间契约、改动 composition root、新增独立服务边界 | 小范围 bugfix 或参数调整，不动层间契约时 |
 | `docs/ai-standards/code-reuse.md` | **任何**新增或修改代码前；考虑提取 helper、判断是否复制粘贴、函数参数 ≥4 个、文件接近 500 行时；交付前必须完成其中的 **AI 编码自检清单** | 纯文档排版或纯配置改动且无代码逻辑变更 |
 | `docs/ai-standards/naming.md` | 新增变量、函数、类型、模块、测试；命名风格不确定时 | 仅改文档时 |

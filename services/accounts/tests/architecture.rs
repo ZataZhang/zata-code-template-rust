@@ -6,7 +6,7 @@
 //! 失败时：修复触发它的 `Cargo.toml`，不要改本测试让它通过。只有当架构约定本身变更时才改
 //! 下面的名单，并同步更新 `docs/ai-standards/architecture.md`。
 //!
-//! 内部层与服务根按目录名识别（`crates/api` → `api`、`services/accounts` → `accounts`），
+//! 内部层与服务根按目录名识别（`services/accounts/crates/api` → `api`、`services/accounts` → `accounts`），
 //! 所以给 package 改名（如去掉 `tpl-` 前缀）不影响本测试。
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -82,7 +82,7 @@ fn read_declared_dependencies() -> Vec<LayerDependencies> {
     );
     let metadata: Value =
         serde_json::from_slice(&output.stdout).expect("cargo metadata 输出不是 JSON");
-    // 只看 `crates/` 下的内部层与 `services/` 下的业务服务。`tools/` 下的开发期工具（xtask）
+    // 只看 `services/*/crates/` 下的内部层与 `services/` 下的业务服务。`tools/` 下的开发期工具（xtask）
     // 不进生产服务，也不参与依赖方向检查。
     let packages: Vec<&Value> = metadata["packages"]
         .as_array()

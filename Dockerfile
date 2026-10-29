@@ -5,7 +5,6 @@ FROM rust:1-slim-bookworm AS builder
 WORKDIR /app
 
 COPY Cargo.toml Cargo.lock ./
-COPY crates ./crates
 # Workspace 成员目录都要复制，Cargo 才能解析工作区；tools 是开发期工具，不会被编译进镜像。
 COPY services ./services
 COPY tools ./tools

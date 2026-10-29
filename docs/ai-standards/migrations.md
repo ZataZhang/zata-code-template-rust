@@ -26,7 +26,7 @@ COMMENT ON COLUMN users.email IS '登录邮箱，已规范化为小写，全局�
 - **账号服务启动时自动执行**（`services/accounts/src/composition.rs` 调用 `persistence::run_migrations`），已应用的会被跳过，所以可以重复启动
 - 配置了 `DATABASE_URL` 就要求启动时数据库可达；不可达则启动失败并以非 0 退出（快速失败，交给编排平台重启）
 - 迁移 SQL 在**编译期**嵌入账号服务二进制（`sqlx::migrate!`），部署时不需要带迁移目录；但**构建镜像时 `services/accounts/migrations/` 必须在构建上下文里**（见 `Dockerfile`）
-- `crates/infrastructure/build.rs` 监视 `services/accounts/migrations/`，改了 SQL 会触发重新编译
+- `services/accounts/crates/infrastructure/build.rs` 监视 `services/accounts/migrations/`，改了 SQL 会触发重新编译
 
 ## 查询的写法
 

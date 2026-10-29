@@ -8,18 +8,24 @@
 
 ## 当前服务边界
 
-`services/accounts/` 是当前唯一业务服务和 composition root（Cargo package `tpl-accounts`，二进制 `accounts-service`）。`crates/*` 是账号服务私有层，不是供其他业务模块依赖的通用库。后续业务模块若需独立数据和部署，应有自己的服务入口、接口与迁移，不依赖账号服务的领域/存储 crate。
+`services/accounts/` 是当前唯一业务服务和 composition root（Cargo package `tpl-accounts`，二进制 `accounts-service`）。`services/accounts/crates/*` 是账号服务私有层，不是供其他业务模块依赖的通用库。后续业务模块若需独立数据和部署，应有自己的服务入口、接口与迁移，不依赖账号服务的领域/存储 crate。
+
+## 新服务目录约定
+
+后续服务将装配根、私有 package、迁移和默认配置集中放在 `services/<service>/`，私有 package 放在该目录的 `crates/` 下，使用业务前缀命名。新增时显式登记 workspace 成员，不依赖账号私有 `crates/*`。账号服务的私有 package 已集中迁入 `services/accounts/crates/`。
+
+目录模板、数据与事务边界、服务间通信、身份和独立发布要求见 [系统设计：微服务结构设计](../architecture/system-design.md#微服务结构设计)。该节描述后续新增服务的设计约定；当前仍只有一个账号业务服务，不要求提前创建空服务。
 
 ## 账号服务内部层
 
-每一层是一个独立的 Cargo crate，目录在 `crates/` 下：
+每一层是一个独立的 Cargo package，目录在 `services/accounts/crates/` 下：
 
 | 层 | crate（目录） | 职责 |
 |---|---|---|
-| 接入层 | `tpl-api`（`crates/api`） | HTTP 路由、参数校验、DTO 转换；调用用例，不写业务规则 |
-| 核心编排层 | `tpl-core`（`crates/core`） | 用例、领域规则、**端口（trait）**；不依赖任何其他内部 crate、不依赖具体 SDK |
-| 平台能力层 | `tpl-engines`（`crates/engines`） | 可插拔的业务能力，实现 core 定义的端口（由派生项目添加） |
-| 基础设施层 | `tpl-infrastructure`（`crates/infrastructure`） | 配置、日志、数据库等具体实现，实现 core 定义的端口 |
+| 接入层 | `tpl-api`（`services/accounts/crates/api`） | HTTP 路由、参数校验、DTO 转换；调用用例，不写业务规则 |
+| 核心编排层 | `tpl-core`（`services/accounts/crates/core`） | 用例、领域规则、**端口（trait）**；不依赖任何其他内部 crate、不依赖具体 SDK |
+| 平台能力层 | `tpl-engines`（`services/accounts/crates/engines`） | 可插拔的业务能力，实现 core 定义的端口（由派生项目添加） |
+| 基础设施层 | `tpl-infrastructure`（`services/accounts/crates/infrastructure`） | 配置、日志、数据库等具体实现，实现 core 定义的端口 |
 | 装配层 | `tpl-accounts`（`services/accounts`） | composition root：创建对象、读配置、把实现接到用例上、启动账号服务 |
 
 ## Dependency Direction

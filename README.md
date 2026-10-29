@@ -28,11 +28,11 @@
 ```text
 services/
 └── accounts/        tpl-accounts        composition root；bin: accounts-service
-crates/                                      仅供账号服务内部使用
-├── api/             tpl-api             HTTP 路由、DTO            → 依赖 core
-├── core/            tpl-core            账号用例、规则、端口       → 不依赖其他 crate
-├── engines/         tpl-engines         可插拔的平台能力（空）     → 依赖 core
-└── infrastructure/  tpl-infrastructure  配置、日志、账号 DB/Redis → 依赖 core
+    └── crates/                          仅供账号服务内部使用
+        ├── api/             tpl-api             HTTP 路由、DTO            → 依赖 core
+        ├── core/            tpl-core            账号用例、规则、端口       → 不依赖其他 crate
+        ├── engines/         tpl-engines         可插拔的平台能力（空）     → 依赖 core
+        └── infrastructure/  tpl-infrastructure  配置、日志、账号 DB/Redis → 依赖 core
 ```
 
 其他业务模块应在 `services/<module>/` 建立独立服务，并拥有自己的数据与迁移，不依赖账号私有 crate。详细架构见 [`docs/architecture/system-design.md`](docs/architecture/system-design.md)，跨应用接入见[账号服务接入指南](docs/guides/accounts-integration.md)。

@@ -41,7 +41,7 @@ pub fn connect_lazy(
 ///
 /// 数据库不可达、迁移 SQL 出错，或已应用的迁移文件被改动过时返回错误。
 pub async fn run_migrations(connection_pool: &PgPool) -> Result<(), sqlx::migrate::MigrateError> {
-    sqlx::migrate!("../../services/accounts/migrations")
+    sqlx::migrate!("../../migrations")
         .run(connection_pool)
         .await
 }

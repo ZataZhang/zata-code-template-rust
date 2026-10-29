@@ -2,5 +2,5 @@
 //! 但 cargo 默认不知道要监视账号服务的迁移目录。
 
 fn main() {
-    println!("cargo:rerun-if-changed=../../services/accounts/migrations");
+    println!("cargo:rerun-if-changed=../../migrations");
 }

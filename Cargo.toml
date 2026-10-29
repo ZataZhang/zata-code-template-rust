@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
-# crates/* 是账号服务的内部层；services/* 是独立业务服务；tools/* 是开发期工具。
-members = ["crates/*", "services/*", "tools/*"]
+# services/accounts/crates/* 是账号服务私有层；services/* 是独立业务服务；tools/* 是开发期工具。
+members = ["services/*", "services/accounts/crates/*", "tools/*"]
 
 [workspace.package]
 version = "0.1.0"
@@ -12,10 +12,10 @@ publish = false
 # 依赖版本统一在这里声明，各 crate 用 `xxx.workspace = true` 引用，避免版本漂移。
 [workspace.dependencies]
 # 账号服务内部 crate（依赖方向见 docs/architecture/system-design.md；声明的依赖由 services/accounts/tests/architecture.rs 检查）
-tpl-api = { path = "crates/api" }
-tpl-core = { path = "crates/core" }
-tpl-engines = { path = "crates/engines" }
-tpl-infrastructure = { path = "crates/infrastructure" }
+tpl-api = { path = "services/accounts/crates/api" }
+tpl-core = { path = "services/accounts/crates/core" }
+tpl-engines = { path = "services/accounts/crates/engines" }
+tpl-infrastructure = { path = "services/accounts/crates/infrastructure" }
 
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }

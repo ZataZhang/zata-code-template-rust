@@ -2,7 +2,113 @@
 
 本仓库提供一个可独立部署的 **账号业务服务**。当前发布的是一个业务服务，不代表已经拆出多个业务微服务。账号服务内部仍按 Clean Architecture 分层；下一项有独立数据归属和部署理由的业务模块应建立自己的服务入口和存储，不能依赖账号私有领域实现。
 
-Cargo workspace 是单仓管理多个独立产物的方式：`services/accounts` 是账号服务 composition root；当前 `crates/*` 都是账号服务私有实现。前后端可经同源 nginx 路由接入账号服务。跨应用复用有两种部署选择：每个应用独立部署账号服务并配置自己的数据库/Redis；或明确选择共享同一账号域。当前没有 `tenant_id` / `app_id` 隔离，不能把共享实例视为彼此隔离的多租户账号系统。
+Cargo workspace 是单仓管理多个独立产物的方式：`services/accounts` 是账号服务 composition root；当前 `services/accounts/crates/*` 都是账号服务私有实现。前后端可经同源 nginx 路由接入账号服务。跨应用复用有两种部署选择：每个应用独立部署账号服务并配置自己的数据库/Redis；或明确选择共享同一账号域。当前没有 `tenant_id` / `app_id` 隔离，不能把共享实例视为彼此隔离的多租户账号系统。
+
+## 微服务结构设计
+
+### 设计范围与当前状态
+
+采用单仓 Cargo workspace 管理多个独立业务服务。当前只有 `accounts-service`，账号服务内部 package 已统一放在 `services/accounts/crates/`。下方的新业务服务目录是后续新增服务的约定。
+
+当前优先保留已运行的账号边界；只有实际业务需要独立数据所有权、发布节奏或运行资源时才新增服务。注册、登录、管理员和用户管理继续属于账号服务。不要按 HTTP 端点、数据库表或技术层拆进程。一次请求必须跨多个服务才能完成的强一致业务，应先评估是否属于同一服务。
+
+### 目录与构建边界
+
+新服务的源码、私有层和迁移集中放在 `services/<service>/`。沿用本项目通过 Cargo package 约束层间依赖的方式：
+
+```text
+Cargo.toml                        # workspace 与统一依赖版本
+Cargo.lock                        # workspace 锁文件
+services/
+  accounts/                       # 账号装配根、私有层、迁移、测试
+    Cargo.toml
+    src/
+    crates/
+      api/
+      core/
+      engines/
+      infrastructure/
+    migrations/
+    tests/
+  <service>/                      # 以下为未来服务模板
+    Cargo.toml                    # package tpl-<service>，独立二进制
+    src/
+      main.rs                     # 启动与退出
+      lib.rs
+      composition.rs              # 依赖装配
+    crates/
+      core/                       # 用例、领域规则、端口
+        Cargo.toml
+        src/lib.rs
+      api/                        # HTTP 路由、DTO、输入校验
+        Cargo.toml
+        src/lib.rs
+      infrastructure/             # 存储、配置、外部客户端适配器
+        Cargo.toml
+        src/lib.rs
+    migrations/                   # 该服务拥有的数据库迁移
+    tests/                        # 真实装配、入口与依赖边界验证
+    config.toml                   # 该服务默认配置，不含密钥值
+    Dockerfile                    # 从仓库根上下文构建该服务
+    README.md                     # 启动、配置、API 与数据归属
+    .sqlx/                        # 使用 SQLx 查询宏时保存离线元数据
+frontend-public/
+frontend-admin/
+packages/                         # 前端复用包
+deploy/                           # 网关与部署配置
+tools/                            # 开发工具
+```
+
+包名使用业务前缀，例如 `tpl-orders-core`，避免多个服务都叫 `tpl-core`。`engines` 只在确有平台能力适配需求时增加。Rust 模块不需要独立的 `Cargo.toml`；只有独立 package 才需要清单。
+
+当前 workspace 成员是 `services/*`、`services/accounts/crates/*`、`tools/*`。新增服务及其私有 package 时，在根 `Cargo.toml` 显式登记对应路径。依赖版本仍由根 `[workspace.dependencies]` 管理，每个服务单独选择依赖。
+
+新服务内部依赖关系：
+
+```text
+<service>-api            → <service>-core
+<service>-infrastructure → <service>-core
+<service>               → 自己的各层（唯一装配根）
+<service>-core          → 不依赖其他内部 package
+```
+
+服务 A 不得依赖服务 B 的装配包、领域、仓储或迁移。现有账号私有 crate 同样不可供新服务引用。跨服务复用优先采用公开协议；只有出现真实重复需求，才提取无业务归属的平台 package，并在本节与架构规范登记职责和依赖方向。不要预建共享领域模型或通用业务服务基类。
+
+### 数据与事务
+
+每个服务拥有自己的表、迁移和数据库凭据。初期可以共用 PostgreSQL 实例，但使用独立数据库与权限；其他服务不得跨库查询、建立跨服务外键或执行其迁移。业务记录可保存账号服务返回的用户 ID，账号存在性与状态通过公开 API 确认。
+
+Redis 可以共用实例，但服务应有独立键前缀、访问权限和容量规划；账号 Cookie、会话和限流键仍只归账号服务管理。其他服务不得解析账号 Redis。
+
+事务只覆盖本服务数据。涉及多个服务时，先定义失败后的业务处理与幂等规则；确有可靠异步投递需求时，再设计 outbox、事件消费与补偿。当前不默认引入消息队列或分布式事务。
+
+### 入口、身份与服务间通信
+
+浏览器经同源 nginx 访问各服务，由网关按路径路由；现有账号 `/api/auth/*`、`/api/admin/*` 路径保持既有契约。新服务使用明确的业务路径，接入时同步前端 API 客户端与网关配置，不复用账号路由前缀。
+
+初期服务间调用采用 HTTP，客户端适配器放在调用方的 infrastructure，用例通过自身 core 端口调用。每次外部调用必须有超时和输入/响应大小上限；只对可安全重复的操作做有限重试。写操作需要重试时先定义幂等契约。避免循环调用和过长的同步调用链。
+
+普通用户身份沿用 [账号接入指南](../guides/accounts-integration.md)：业务后端向账号服务 `/auth/me` 验证原始普通用户 Cookie，随后执行本服务自己的授权规则。管理员使用独立契约。不得信任浏览器自报的用户 ID。服务自身身份与用户身份分别设计；无用户会话的后台任务必须在落地时明确服务鉴权和授权方式，当前没有现成的服务令牌协议。
+
+公开 HTTP 契约由服务所有者维护，明确请求、响应、错误码及兼容性；兼容字段采用增量演进，破坏性变更需安排调用方迁移。领域结构体不直接充当跨服务契约。暂不建设共享 DTO package；确有多个调用方需要 SDK 时再单独规划。
+
+### 配置、运行与发布
+
+每个服务独立读取配置、注入密钥、构建镜像和发布；现有根 `config.toml`、Dockerfile、Nacos Data ID 与 compose-config 实现属于当前账号/站点部署，不自动成为新服务的配置来源。新增服务时为其确定独立配置分区或 Data ID，禁止隐式读取账号数据库连接串。
+
+根 Compose 负责组合本地整站，服务可以单独启动其必要依赖。初期继续使用 Compose 网络 DNS 与现有 nginx，无需预先引入注册中心、专用 API 网关、Kubernetes 或服务网格。每个服务提供 `/live` 与 `/ready`、优雅退出、结构化日志；增加第二个服务的跨服务调用时同步贯通请求关联 ID，并确保凭据不进入日志。
+
+CI 可统一触发，但必须能够按 package 构建、按服务生成镜像和选择发布目标；同一 workspace 不要求所有服务同时部署。SQLx 离线元数据按服务维护，新服务的 Docker/CI 必须明确从该服务目录读取对应元数据，不能误用根目录的账号元数据。实际 SQLx 配置方式在新增服务时验证并记录。
+
+### 新增服务的执行步骤
+
+1. 记录业务职责、数据所有者、独立部署理由和与账号服务的交互；没有充分理由时先在已有服务内实现。
+2. 按上述目录创建服务及必要私有 package，登记 workspace 成员、依赖边界和文档。
+3. 定义 API、身份与授权、数据迁移、配置和失败处理；涉及前端契约时同步规划前端。
+4. 提供独立启动、镜像、网关路由及 Compose 接入，明确数据库、Redis 与配置归属。
+5. 按测试规范验证真实服务入口、真实数据依赖与跨服务身份链路，再记录证据；涉及 PRD 时遵循领取锁、交付和归档流程。
+
+本设计的收益是让后续服务具备清晰所有权和独立交付能力；当前实施范围仅为文档。新增进程会增加部署、网络失败处理与验证成本，因此不提前创建示例业务服务或基础设施。
 
 ## 架构原则
 
@@ -18,26 +124,26 @@ Cargo workspace 是单仓管理多个独立产物的方式：`services/accounts`
 
 这些 crate 属于账号服务内部实现，不是跨业务模块的共享 SDK。
 
-#### `tpl-api`（`crates/api`）请求接入层
+#### `tpl-api`（`services/accounts/crates/api`）请求接入层
 
 - 接收 HTTP（将来可有 WebSocket、CLI）请求
 - 只做参数校验、DTO 转换、调用用例；不写业务规则
 - 只依赖 `tpl-core`，因此碰不到数据库等具体实现
 - 响应里不暴露内部错误细节，原因写日志
 
-#### `tpl-core`（`crates/core`）核心编排层
+#### `tpl-core`（`services/accounts/crates/core`）核心编排层
 
 - 放置用例、领域规则和端口（trait）：`health`（健康检查）、`auth`（注册、登录、会话、退出，及其端口 `UserRepository` / `SessionStore` / `PasswordHasher`）
 - 不依赖任何其他内部 crate，不依赖具体 SDK
 - `auth::testing` 提供端口的内存替身（`testing` feature），让 core 与 api 的测试不连外部服务
 - 公共签名里不出现 `sqlx::PgPool` 这类具体类型
 
-#### `tpl-engines`（`crates/engines`）平台能力层
+#### `tpl-engines`（`services/accounts/crates/engines`）平台能力层
 
 - 放置可插拔的平台能力（检索、爬虫、OCR 等），实现 core 定义的端口
 - 模板里是空的，由派生项目添加
 
-#### `tpl-infrastructure`（`crates/infrastructure`）基础设施层
+#### `tpl-infrastructure`（`services/accounts/crates/infrastructure`）基础设施层
 
 - 配置（`config.rs`）、日志（`logging.rs`）、PostgreSQL（`persistence.rs`：连接池、迁移、用户仓储、管理员仓储）、Redis（`redis_session.rs`：按命名空间隔离的会话存储）、密码哈希（`password.rs`：argon2id）
 - 实现 core 的端口，例如 `PostgresReadinessProbe` 实现 `ReadinessProbe`，`RedisSessionStore` 实现 `SessionStore`
@@ -56,7 +162,7 @@ Cargo workspace 是单仓管理多个独立产物的方式：`services/accounts`
 flowchart TD
     Client["浏览器 / 负载均衡 / 探针"] -->|HTTP| Api
 
-    subgraph Workspace["账号服务：services/accounts + 私有 crates/*"]
+    subgraph Workspace["账号服务：services/accounts/"]
         direction TB
         App["tpl-accounts<br/>accounts-service"]
         Api["tpl-api<br/>路由 · DTO"]
@@ -195,7 +301,7 @@ sequenceDiagram
 
 1. 在 `tpl-core` 定义端口（trait）和用例，写单元测试（用替身实现端口）
 2. 在 `tpl-infrastructure` 或 `tpl-engines` 实现端口
-3. 在 `tpl-api` 加路由与 DTO，在 `crates/api/tests/` 加走完整路由的集成测试
+3. 在 `tpl-api` 加路由与 DTO，在 `services/accounts/crates/api/tests/` 加走完整路由的集成测试
 4. 在 `services/accounts/src/composition.rs` 接线
 5. 运行 `just ci`，再用真实进程做一次 `curl` 冒烟
 

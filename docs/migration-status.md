@@ -10,11 +10,11 @@
 
 | 内容 | 位置 | 说明 |
 |---|---|---|
-| 分层架构（四层 + 装配层） | `crates/*`、`services/accounts/` | `crates/*` 是账号服务私有层，装配根与二进制位于 `services/accounts/`；守卫测试检查其依赖方向 |
-| 健康探针 `/live` `/health` `/ready` | `crates/api`、`crates/core` | `/ready` 通过端口探测 PostgreSQL，503 时不泄露原因 |
-| 配置加载 | `crates/infrastructure/src/config.rs`、`config.toml` `[nacos]` | 默认值 < `config.toml` < 可选 Nacos TOML < 环境变量；Nacos 定位元数据保存在项目配置中，本地 `.env.local` 只装地址与认证凭据 |
-| 日志 | `crates/infrastructure/src/logging.rs` | `tracing`，文本/JSON 两种格式 |
-| 数据库连接池 | `crates/infrastructure/src/persistence.rs` | sqlx，惰性重连 |
+| 分层架构（四层 + 装配层） | `services/accounts/crates/*`、`services/accounts/` | `services/accounts/crates/*` 是账号服务私有层，装配根与二进制位于 `services/accounts/`；守卫测试检查其依赖方向 |
+| 健康探针 `/live` `/health` `/ready` | `services/accounts/crates/api`、`services/accounts/crates/core` | `/ready` 通过端口探测 PostgreSQL，503 时不泄露原因 |
+| 配置加载 | `services/accounts/crates/infrastructure/src/config.rs`、`config.toml` `[nacos]` | 默认值 < `config.toml` < 可选 Nacos TOML < 环境变量；Nacos 定位元数据保存在项目配置中，本地 `.env.local` 只装地址与认证凭据 |
+| 日志 | `services/accounts/crates/infrastructure/src/logging.rs` | `tracing`，文本/JSON 两种格式 |
+| 数据库连接池 | `services/accounts/crates/infrastructure/src/persistence.rs` | sqlx，惰性重连 |
 | 优雅退出 | `services/accounts/src/shutdown.rs` | Ctrl+C / SIGTERM |
 | 统一命令入口 | `justfile` | 精简重写（约 90 行），不是照搬 1500 行的 `justfile.shared` |
 | 本地中间件 | `docker-compose.testing.yml` | PostgreSQL + Redis，端口 5433 / 6390 |
@@ -27,12 +27,12 @@
 
 | 内容 | 位置 | 说明 |
 |---|---|---|
-| 用户注册、登录、退出、`/auth/me` | `crates/core/src/auth.rs`、`crates/api/src/auth.rs` | 邮箱 + 密码；设计与安全取舍见 `docs/architecture/system-design.md`「认证」 |
-| 密码哈希 | `crates/infrastructure/src/password.rs` | argon2id，在 `spawn_blocking` 里计算 |
-| HTTP-only Cookie 会话 + Redis 会话存储 | `crates/infrastructure/src/redis_session.rs` | 令牌 256 位随机；Redis 里只存令牌的 SHA-256 |
-| 登录与注册限流 | `crates/core/src/auth/throttle.rs`、`crates/infrastructure/src/redis_attempts.rs` | 按 IP、按账号、注册按 IP；不泄露账号是否存在；默认只信任 TCP 对端地址；Redis 固定窗口；详见 `docs/architecture/system-design.md`「认证」 |
+| 用户注册、登录、退出、`/auth/me` | `services/accounts/crates/core/src/auth.rs`、`services/accounts/crates/api/src/auth.rs` | 邮箱 + 密码；设计与安全取舍见 `docs/architecture/system-design.md`「认证」 |
+| 密码哈希 | `services/accounts/crates/infrastructure/src/password.rs` | argon2id，在 `spawn_blocking` 里计算 |
+| HTTP-only Cookie 会话 + Redis 会话存储 | `services/accounts/crates/infrastructure/src/redis_session.rs` | 令牌 256 位随机；Redis 里只存令牌的 SHA-256 |
+| 登录与注册限流 | `services/accounts/crates/core/src/auth/throttle.rs`、`services/accounts/crates/infrastructure/src/redis_attempts.rs` | 按 IP、按账号、注册按 IP；不泄露账号是否存在；默认只信任 TCP 对端地址；Redis 固定窗口；详见 `docs/architecture/system-design.md`「认证」 |
 | 数据库迁移 | `services/accounts/migrations/`、`persistence::run_migrations` | `sqlx migrate`，启动时自动执行；表和列带 `COMMENT`；约定见 `docs/ai-standards/migrations.md` |
-| 用户仓储 | `crates/infrastructure/src/persistence/user_repository.rs` | SQLx 宏编译期校验 SQL、列名与绑定类型；值使用参数绑定；唯一约束映射为 `EmailTaken` |
+| 用户仓储 | `services/accounts/crates/infrastructure/src/persistence/user_repository.rs` | SQLx 宏编译期校验 SQL、列名与绑定类型；值使用参数绑定；唯一约束映射为 `EmailTaken` |
 | 依赖方向守卫测试 | `services/accounts/tests/architecture.rs` | 读 `cargo metadata` 对照允许名单；自带「故意违规必须报错」的负控 |
 | 端到端测试 | `services/accounts/tests/http_end_to_end.rs` | 真实装配 + 真实 socket；认证全流程用真实 PostgreSQL 与 Redis（`just test real`） |
 | `just sync` | `justfile` | `cargo fetch --locked`（Rust 没有单独的安装步骤） |
@@ -55,14 +55,14 @@
 
 | 内容 | 位置 | 说明 |
 |---|---|---|
-| 管理员域 | `crates/core/src/admin.rs` | 独立账号、登录与会话、用户管理用例；引导账号幂等且不覆盖密码；列表参数在这里统一规整 |
-| 用户停用/启用 | `crates/core/src/auth.rs`、迁移 `20261016120000_add_admin_users.sql` | `users.status`（CHECK 约束）；停用立即生效，登录得到 `403 account_disabled` |
-| 会话端口改为中立的 `i64` 主体 | `crates/core/src/auth.rs`、`crates/infrastructure/src/redis_session.rs` | 用户与管理员复用同一个端口与适配器，靠 Redis 键命名空间隔离 |
-| 管理后台接口 | `crates/api/src/admin.rs`、`crates/api/src/http.rs` | `/admin/auth/*`、`/admin/users*`；错误映射、客户端 IP、Cookie 辅助从 `auth.rs` 抽到 `http.rs` 共用 |
-| 管理员仓储、用户仓储扩展 | `crates/infrastructure/src/persistence/` | 列表用固定 SQL + 参数绑定，关键字转义 `LIKE` 通配符 |
-| 配置 | `crates/infrastructure/src/config.rs`、`config.toml` `[admin]` | 引导账号（密码在 `Debug` 里隐藏）、会话时长、Cookie 名、更严的默认限流 |
+| 管理员域 | `services/accounts/crates/core/src/admin.rs` | 独立账号、登录与会话、用户管理用例；引导账号幂等且不覆盖密码；列表参数在这里统一规整 |
+| 用户停用/启用 | `services/accounts/crates/core/src/auth.rs`、迁移 `20261016120000_add_admin_users.sql` | `users.status`（CHECK 约束）；停用立即生效，登录得到 `403 account_disabled` |
+| 会话端口改为中立的 `i64` 主体 | `services/accounts/crates/core/src/auth.rs`、`services/accounts/crates/infrastructure/src/redis_session.rs` | 用户与管理员复用同一个端口与适配器，靠 Redis 键命名空间隔离 |
+| 管理后台接口 | `services/accounts/crates/api/src/admin.rs`、`services/accounts/crates/api/src/http.rs` | `/admin/auth/*`、`/admin/users*`；错误映射、客户端 IP、Cookie 辅助从 `auth.rs` 抽到 `http.rs` 共用 |
+| 管理员仓储、用户仓储扩展 | `services/accounts/crates/infrastructure/src/persistence/` | 列表用固定 SQL + 参数绑定，关键字转义 `LIKE` 通配符 |
+| 配置 | `services/accounts/crates/infrastructure/src/config.rs`、`config.toml` `[admin]` | 引导账号（密码在 `Debug` 里隐藏）、会话时长、Cookie 名、更严的默认限流 |
 | 管理后台前端 | `frontend-admin/` | 从 Python 模板复制并**大幅精简**：只保留登录与用户管理（搜索、状态筛选、分页、启用/停用，中英双语）；删掉演示页面（仪表盘假数据、任务、项目、应用、聊天、帮助、设置表单、运行轨迹、What's New）；错误按后端的 `code` 翻译；修掉模板里 `instanceof AxiosError` 永不命中（请求被包装成 `ApiRequestError`）导致会话过期不跳转的问题；独立 pnpm 项目，Dockerfile 用 `BACKEND_UPSTREAM` 在运行时指定后端 |
-| 测试 | `crates/core/src/admin/tests.rs`、`crates/api/tests/admin_routes.rs`、`services/accounts/tests/http_end_to_end.rs`、`frontend-admin/e2e/admin.e2e.mjs` | 隔离、限流独立、停用立即生效、列表边界、`RequireJson`；真实 PostgreSQL/Redis；真实 Chrome 33 项检查；负控：让管理员复用普通域的键前缀，真实端到端用例变红 |
+| 测试 | `services/accounts/crates/core/src/admin/tests.rs`、`services/accounts/crates/api/tests/admin_routes.rs`、`services/accounts/tests/http_end_to_end.rs`、`frontend-admin/e2e/admin.e2e.mjs` | 隔离、限流独立、停用立即生效、列表边界、`RequireJson`；真实 PostgreSQL/Redis；真实 Chrome 33 项检查；负控：让管理员复用普通域的键前缀，真实端到端用例变红 |
 | just 命令 | `justfile` | `web-admin-install`、`web-admin-dev`、`web-admin-check`、`web-admin-test`、`web-admin-docker-build`；`web-e2e` 同时跑两个前端 |
 
 ### 阶段 6：部署、配置与备份
@@ -70,7 +70,7 @@
 | 内容 | 位置 | 说明 |
 |---|---|---|
 | 整套服务的 compose | `docker-compose.yml`、`docker-compose.accounts.yml`、`just stack-*`、`services/accounts/src/bin/compose_config.rs` | PostgreSQL + Redis + 账号服务 + 前台 + 管理后台；部署配置从独立 Nacos Properties Data ID 读取并只注入 Compose 子进程，不生成本地部署环境文件；accounts 用 `/ready` 做健康检查 |
-| Nacos Compose 配置入口 | `crates/infrastructure/src/config/{nacos,compose}.rs`、`scripts/compose-config.sh` | 复用应用 Nacos HTTP 读取器，强制独立 Compose Data ID；严格解析白名单字面量属性并在 Docker 启动前校验；Nacos 错误时不回退本地配置 |
+| Nacos Compose 配置入口 | `services/accounts/crates/infrastructure/src/config/{nacos,compose}.rs`、`scripts/compose-config.sh` | 复用应用 Nacos HTTP 读取器，强制独立 Compose Data ID；严格解析白名单字面量属性并在 Docker 启动前校验；Nacos 错误时不回退本地配置 |
 | 前台入口代理 `edge` | `deploy/edge.nginx.conf` | **验证中发现 Next.js 的 rewrite 代理不会追加 `X-Forwarded-For`**，直接暴露它再开 `trust_forwarded_for` 会让伪造 IP 绕过限流（复现：21 次失败全部通过）。因此前台经 nginx 访问，nginx 覆盖写该头并把 `/api/` 直接转给账号服务；`web` 与 `accounts` 不发布端口。管理后台的 nginx 同样补了 `TRUSTED_PROXY_CIDR`（前面还有 HTTPS 代理时还原真实客户端 IP）。已更正 system-design、前台 README、config.toml 里的错误说法 |
 | 修掉的 Dockerfile 问题 | `Dockerfile` | 加入 `tools/xtask` 之后后端镜像一直构建失败（工作区成员 `tools/*` 没拷进构建上下文），CI 的 docker 任务本会红；compose 首次构建时才暴露 |
 | 备份与恢复 | `scripts/db-backup.sh`、`scripts/db-restore.sh`、`scripts/lib/` | `pg_dump` 自定义格式；先写临时文件、校验后才落盘；恢复前先验证文件可读（坏文件不动现有数据）；备份与恢复均先从 Nacos 装配 Compose 环境 |

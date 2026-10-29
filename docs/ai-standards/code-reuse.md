@@ -6,7 +6,7 @@
 
 新增或修改功能前，先搜索现有实现：
 
-- 用 `rg` 搜索 `crates/core/`（业务规则）、`crates/api/`、`crates/infrastructure/`、`crates/engines/`
+- 用 `rg` 搜索当前服务的 `services/<service>/crates/core/`（业务规则）、`api/`、`infrastructure/`、`engines/`；账号服务对应 `services/accounts/crates/`
 - 业务规则优先复用 `tpl-core`；它是业务规则的唯一可信源，`tpl-api` 只做入口适配、参数校验、DTO 转换和用例调用
 - 先看标准库和已有依赖是否已提供（`Option`/`Iterator` 的组合子、`itertools` 之类）再自己写
 

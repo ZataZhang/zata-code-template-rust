@@ -91,7 +91,7 @@ prd *args:
 
 # 文件行数上限检查（硬上限 1000 个非空行，CI 里用）
 check-lines:
-    cargo xtask hook max-lines --max-lines 1000 --glob '*.rs' crates services tools
+    cargo xtask hook max-lines --max-lines 1000 --glob '*.rs' services tools
 
 # 安装 git 钩子（提交前检查 + 提交信息检查）。需要先装 pre-commit：brew install pre-commit 或 pipx install pre-commit
 hooks:

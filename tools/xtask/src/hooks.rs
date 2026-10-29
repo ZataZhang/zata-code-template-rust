@@ -418,9 +418,12 @@ mod tests {
     fn glob_matching_handles_names_and_path_tails() {
         assert!(glob_matches(Path::new("a/b/c.rs"), "*.rs"));
         assert!(!glob_matches(Path::new("a/b/c.rs"), "*.py"));
-        assert!(glob_matches(Path::new("crates/api/src/lib.rs"), "src/*.rs"));
+        assert!(glob_matches(
+            Path::new("services/accounts/crates/api/src/lib.rs"),
+            "src/*.rs"
+        ));
         assert!(!glob_matches(
-            Path::new("crates/api/tests/lib.rs"),
+            Path::new("services/accounts/crates/api/tests/lib.rs"),
             "src/*.rs"
         ));
         assert!(glob_matches(Path::new("x.test.ts"), "*.test.ts"));
