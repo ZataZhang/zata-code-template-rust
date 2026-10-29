@@ -6,8 +6,8 @@
 //! 失败时：修复触发它的 `Cargo.toml`，不要改本测试让它通过。只有当架构约定本身变更时才改
 //! 下面的名单，并同步更新 `docs/ai-standards/architecture.md`。
 //!
-//! 内部层与服务根按目录名识别（`services/accounts/crates/api` → `api`、`services/accounts` → `accounts`），
-//! 所以给 package 改名（如去掉 `tpl-` 前缀）不影响本测试。
+//! 内部层按服务名和目录名识别（`services/accounts/crates/api` → `accounts-api`），
+//! 服务根按目录名识别（`services/accounts` → `accounts`），所以给 package 改名不影响本测试。
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -17,11 +17,30 @@ use serde_json::Value;
 
 /// 每一层允许依赖的内部层。`core` 是最内层，不依赖任何内部层；`app` 是 composition root。
 const ALLOWED_LAYER_DEPENDENCIES: &[(&str, &[&str])] = &[
-    ("core", &[]),
-    ("api", &["core"]),
-    ("engines", &["core"]),
-    ("infrastructure", &["core"]),
-    ("accounts", &["api", "core", "engines", "infrastructure"]),
+    ("accounts-core", &[]),
+    ("accounts-api", &["accounts-core"]),
+    ("accounts-engines", &["accounts-core"]),
+    ("accounts-infrastructure", &["accounts-core"]),
+    (
+        "accounts",
+        &[
+            "accounts-api",
+            "accounts-core",
+            "accounts-engines",
+            "accounts-infrastructure",
+        ],
+    ),
+    ("agent-tracing-core", &[]),
+    ("agent-tracing-api", &["agent-tracing-core"]),
+    ("agent-tracing-infrastructure", &["agent-tracing-core"]),
+    (
+        "agent-tracing",
+        &[
+            "agent-tracing-api",
+            "agent-tracing-core",
+            "agent-tracing-infrastructure",
+        ],
+    ),
 ];
 
 /// 某一层实际声明的内部依赖（含 dev / build 依赖）。
@@ -83,7 +102,7 @@ fn read_declared_dependencies() -> Vec<LayerDependencies> {
     let metadata: Value =
         serde_json::from_slice(&output.stdout).expect("cargo metadata 输出不是 JSON");
     // 只看 `services/*/crates/` 下的内部层与 `services/` 下的业务服务。`tools/` 下的开发期工具（xtask）
-    // 不进生产服务，也不参与依赖方向检查。
+    // 不进生产服务，也不参与依赖方向检查。内部层名带服务前缀，避免同名层掩盖跨服务依赖。
     let packages: Vec<&Value> = metadata["packages"]
         .as_array()
         .expect("缺少 packages")
@@ -108,12 +127,35 @@ fn read_declared_dependencies() -> Vec<LayerDependencies> {
             let manifest_path = package["manifest_path"]
                 .as_str()
                 .expect("缺少 manifest_path");
-            let layer = Path::new(manifest_path)
+            let package_directory = Path::new(manifest_path)
+                .parent()
+                .expect("无法从 manifest_path 得到 package 目录");
+            let parent_name = package_directory
                 .parent()
                 .and_then(Path::file_name)
                 .and_then(|name| name.to_str())
-                .expect("无法从 manifest_path 得到目录名")
-                .to_string();
+                .expect("无法从 manifest_path 得到 package 父目录名");
+            let layer = match parent_name {
+                "crates" => {
+                    let service_name = package_directory
+                        .parent()
+                        .and_then(Path::parent)
+                        .and_then(Path::file_name)
+                        .and_then(|name| name.to_str())
+                        .expect("无法从 manifest_path 得到服务目录名");
+                    let crate_name = package_directory
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .expect("无法从 manifest_path 得到 crate 目录名");
+                    format!("{service_name}-{crate_name}")
+                }
+                "services" => package_directory
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .expect("无法从 manifest_path 得到服务目录名")
+                    .to_string(),
+                unexpected_parent => panic!("未预期的服务 package 父目录 `{unexpected_parent}`"),
+            };
             (package["name"].as_str().expect("缺少 name"), layer)
         })
         .collect();
@@ -156,30 +198,61 @@ fn checker_rejects_forbidden_and_unregistered_dependencies() {
         internal_layers: deps.iter().map(|dep| (*dep).to_string()).collect(),
     };
     let declared = vec![
-        layer("core", &["infrastructure"]),        // 内层反向依赖外层
-        layer("api", &["core", "infrastructure"]), // 接入层越过 core 直接依赖基础设施
-        layer("engines", &["core"]),
-        layer("infrastructure", &["core"]),
-        layer("accounts", &["api", "core", "engines", "infrastructure"]),
-        layer("billing", &["core"]), // 未登记的新层
+        layer("accounts-core", &["accounts-infrastructure"]), // 内层反向依赖外层
+        layer(
+            "accounts-api",
+            &[
+                "accounts-core",
+                "accounts-infrastructure",
+                "agent-tracing-core",
+            ],
+        ), // 禁止跨服务依赖，也禁止接入层越过 core
+        layer("accounts-engines", &["accounts-core"]),
+        layer("accounts-infrastructure", &["accounts-core"]),
+        layer(
+            "accounts",
+            &[
+                "accounts-api",
+                "accounts-core",
+                "accounts-engines",
+                "accounts-infrastructure",
+            ],
+        ),
+        layer("agent-tracing-core", &[]),
+        layer("agent-tracing-api", &["agent-tracing-core"]),
+        layer("agent-tracing-infrastructure", &["agent-tracing-core"]),
+        layer(
+            "agent-tracing",
+            &[
+                "agent-tracing-api",
+                "agent-tracing-core",
+                "agent-tracing-infrastructure",
+            ],
+        ),
+        layer("billing-core", &[]), // 未登记的新层
     ];
 
     let violations = find_violations(&declared);
 
-    assert_eq!(violations.len(), 3, "实际：{violations:#?}");
+    assert_eq!(violations.len(), 4, "实际：{violations:#?}");
     assert!(
         violations
             .iter()
-            .any(|v| v.starts_with("`core` 不允许依赖 `infrastructure`"))
+            .any(|v| v.starts_with("`accounts-core` 不允许依赖 `accounts-infrastructure`"))
     );
     assert!(
         violations
             .iter()
-            .any(|v| v.starts_with("`api` 不允许依赖 `infrastructure`"))
+            .any(|v| v.starts_with("`accounts-api` 不允许依赖 `accounts-infrastructure`"))
     );
     assert!(
         violations
             .iter()
-            .any(|v| v.contains("未登记的层 `billing`"))
+            .any(|v| v.starts_with("`accounts-api` 不允许依赖 `agent-tracing-core`"))
+    );
+    assert!(
+        violations
+            .iter()
+            .any(|v| v.contains("未登记的层 `billing-core`"))
     );
 }

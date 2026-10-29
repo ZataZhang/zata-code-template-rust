@@ -461,7 +461,7 @@ mod tests {
             );
         }
 
-        for retained_path in [".env.example", "frontend-admin/.env.example", "src/lib.rs"] {
+        for retained_path in [".env.example", "frontends/admin/.env.example", "src/lib.rs"] {
             assert!(
                 !is_excluded_from_copy(Path::new(retained_path)),
                 "应保留 {retained_path}"

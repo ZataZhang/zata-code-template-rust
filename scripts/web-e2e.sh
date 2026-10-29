@@ -84,15 +84,15 @@ BACKEND_PID=$!
 
 echo "==> 构建并启动前端（端口 $WEB_PORT，代理到后端 $BACKEND_PORT）"
 # 后端地址要在构建时传入：Next 的 rewrites 会在构建时固化。
-( cd frontend-public && BACKEND_URL="http://127.0.0.1:$BACKEND_PORT" pnpm build >"$LOG_DIR/web-build.log" 2>&1 ) \
+( cd frontends/public && BACKEND_URL="http://127.0.0.1:$BACKEND_PORT" pnpm build >"$LOG_DIR/web-build.log" 2>&1 ) \
   || { cat "$LOG_DIR/web-build.log" >&2; exit 1; }
-( cd frontend-public && exec pnpm exec next start -p "$WEB_PORT" ) >"$LOG_DIR/web.log" 2>&1 &
+( cd frontends/public && exec pnpm exec next start -p "$WEB_PORT" ) >"$LOG_DIR/web.log" 2>&1 &
 WEB_PID=$!
 
 echo "==> 构建并启动管理后台（端口 $ADMIN_PORT，/api 代理到后端 $BACKEND_PORT）"
-( cd frontend-admin && pnpm build >"$LOG_DIR/admin-build.log" 2>&1 ) \
+( cd frontends/admin && pnpm build >"$LOG_DIR/admin-build.log" 2>&1 ) \
   || { cat "$LOG_DIR/admin-build.log" >&2; exit 1; }
-( cd frontend-admin && BACKEND_PORT="$BACKEND_PORT" exec pnpm exec vite preview --host 127.0.0.1 --port "$ADMIN_PORT" --strictPort ) >"$LOG_DIR/admin-web.log" 2>&1 &
+( cd frontends/admin && BACKEND_PORT="$BACKEND_PORT" exec pnpm exec vite preview --host 127.0.0.1 --port "$ADMIN_PORT" --strictPort ) >"$LOG_DIR/admin-web.log" 2>&1 &
 ADMIN_WEB_PID=$!
 
 for _ in $(seq 1 100); do
@@ -116,10 +116,10 @@ done
 curl -fs -o /dev/null "http://127.0.0.1:$HOST_PORT" || { echo "第二宿主没有在预期时间内就绪" >&2; exit 1; }
 
 echo "==> 运行浏览器测试：公开站点"
-( cd frontend-public && BASE_URL="http://127.0.0.1:$WEB_PORT" node e2e/auth.e2e.mjs )
+( cd frontends/public && BASE_URL="http://127.0.0.1:$WEB_PORT" node e2e/auth.e2e.mjs )
 
 echo "==> 运行浏览器测试：管理后台"
-( cd frontend-admin && \
+( cd frontends/admin && \
   BASE_URL="http://127.0.0.1:$ADMIN_PORT" BACKEND_URL="http://127.0.0.1:$BACKEND_PORT" \
   ADMIN_USERNAME="$ADMIN_USERNAME" ADMIN_PASSWORD="$ADMIN_PASSWORD" node e2e/admin.e2e.mjs )
 

@@ -1,6 +1,6 @@
 # 系统架构
 
-本仓库提供一个可独立部署的 **账号业务服务**。当前发布的是一个业务服务，不代表已经拆出多个业务微服务。账号服务内部仍按 Clean Architecture 分层；下一项有独立数据归属和部署理由的业务模块应建立自己的服务入口和存储，不能依赖账号私有领域实现。
+本仓库提供两个可独立部署的后端微服务：`accounts-service` 与 `agent-tracing`。账号服务负责认证与管理员身份；第二个 tracing 服务独立接收 Agent 事件、保存轨迹并提供管理员查询。两者各自拥有数据、迁移和配置，`agent-tracing` 不依赖账号私有领域实现。
 
 Cargo workspace 是单仓管理多个独立产物的方式：`services/accounts` 是账号服务 composition root；当前 `services/accounts/crates/*` 都是账号服务私有实现。前后端可经同源 nginx 路由接入账号服务。跨应用复用有两种部署选择：每个应用独立部署账号服务并配置自己的数据库/Redis；或明确选择共享同一账号域。当前没有 `tenant_id` / `app_id` 隔离，不能把共享实例视为彼此隔离的多租户账号系统。
 
@@ -8,7 +8,7 @@ Cargo workspace 是单仓管理多个独立产物的方式：`services/accounts`
 
 ### 设计范围与当前状态
 
-采用单仓 Cargo workspace 管理多个独立业务服务。当前只有 `accounts-service`，账号服务内部 package 已统一放在 `services/accounts/crates/`。下方的新业务服务目录是后续新增服务的约定。
+采用单仓 Cargo workspace 管理多个独立业务服务。`services/accounts/` 与 `services/agent-tracing/` 分别是独立 composition root；账号服务内部 package 放在 `services/accounts/crates/`，tracing 私有 package 放在 `services/agent-tracing/crates/`。以下约定继续适用于后续新增业务服务。
 
 当前优先保留已运行的账号边界；只有实际业务需要独立数据所有权、发布节奏或运行资源时才新增服务。注册、登录、管理员和用户管理继续属于账号服务。不要按 HTTP 端点、数据库表或技术层拆进程。一次请求必须跨多个服务才能完成的强一致业务，应先评估是否属于同一服务。
 
@@ -52,8 +52,10 @@ services/
     Dockerfile                    # 从仓库根上下文构建该服务
     README.md                     # 启动、配置、API 与数据归属
     .sqlx/                        # 使用 SQLx 查询宏时保存离线元数据
-frontend-public/
-frontend-admin/
+frontends/                           # 独立部署的前端应用
+├── public/                          # Next.js 公开站点
+├── admin/                           # Vite/React 管理后台
+└── tracing/                         # Vite/React 子服务，代理 accounts 与 agent-tracing HTTP API
 packages/                         # 前端复用包
 deploy/                           # 网关与部署配置
 tools/                            # 开发工具
@@ -61,7 +63,7 @@ tools/                            # 开发工具
 
 包名使用业务前缀，例如 `tpl-orders-core`，避免多个服务都叫 `tpl-core`。`engines` 只在确有平台能力适配需求时增加。Rust 模块不需要独立的 `Cargo.toml`；只有独立 package 才需要清单。
 
-当前 workspace 成员是 `services/*`、`services/accounts/crates/*`、`tools/*`。新增服务及其私有 package 时，在根 `Cargo.toml` 显式登记对应路径。依赖版本仍由根 `[workspace.dependencies]` 管理，每个服务单独选择依赖。
+当前 workspace 成员是 `services/*`、`services/accounts/crates/*`、`services/agent-tracing/crates/*`、`tools/*`。新增服务及其私有 package 时，在根 `Cargo.toml` 显式登记对应路径。依赖版本仍由根 `[workspace.dependencies]` 管理，每个服务单独选择依赖。
 
 新服务内部依赖关系：
 
@@ -94,7 +96,7 @@ Redis 可以共用实例，但服务应有独立键前缀、访问权限和容�
 
 ### 配置、运行与发布
 
-每个服务独立读取配置、注入密钥、构建镜像和发布；现有根 `config.toml`、Dockerfile、Nacos Data ID 与 compose-config 实现属于当前账号/站点部署，不自动成为新服务的配置来源。新增服务时为其确定独立配置分区或 Data ID，禁止隐式读取账号数据库连接串。
+每个服务独立读取配置、注入密钥、构建镜像和发布。账号服务使用根 `config.toml`，Agent tracing 使用 `services/agent-tracing/config.toml` 和独立的数据库连接配置；不能隐式读取账号数据库连接串。根 Compose 组合两项后端服务与三个独立前端，tracing UI 的 nginx 按路径代理管理员认证、轨迹查询和 producer 写入请求。
 
 根 Compose 负责组合本地整站，服务可以单独启动其必要依赖。初期继续使用 Compose 网络 DNS 与现有 nginx，无需预先引入注册中心、专用 API 网关、Kubernetes 或服务网格。每个服务提供 `/live` 与 `/ready`、优雅退出、结构化日志；增加第二个服务的跨服务调用时同步贯通请求关联 ID，并确保凭据不进入日志。
 
@@ -108,12 +110,12 @@ CI 可统一触发，但必须能够按 package 构建、按服务生成镜像�
 4. 提供独立启动、镜像、网关路由及 Compose 接入，明确数据库、Redis 与配置归属。
 5. 按测试规范验证真实服务入口、真实数据依赖与跨服务身份链路，再记录证据；涉及 PRD 时遵循领取锁、交付和归档流程。
 
-本设计的收益是让后续服务具备清晰所有权和独立交付能力；当前实施范围仅为文档。新增进程会增加部署、网络失败处理与验证成本，因此不提前创建示例业务服务或基础设施。
+新增服务需要承担部署、网络失败处理与验证成本；因此每项服务都应有明确数据所有权和独立交付理由。当前 tracing producer 使用带 source/project 绑定的 HTTP/JSON 接入，并由 accounts 的公开管理员校验接口确认后台会话。
 
 ## 架构原则
 
 - **依赖向内**：外层可以依赖内层，内层不能反向依赖外层。最内层是 `tpl-core`。
-- **账号服务内部边界有两道防线**：依赖写在 Cargo.toml 里，没声明就无法 `use`（Cargo）；已声明的依赖由 `services/accounts/tests/architecture.rs` 对照允许名单检查。后续业务服务不得依赖这些账号私有 crate。
+- **服务私有 crate 边界有两道防线**：依赖写在 Cargo.toml 里，没声明就无法 `use`（Cargo）；已声明的依赖由 `services/accounts/tests/architecture.rs` 按服务前缀对照允许名单，检查层间方向并拒绝跨服务私有 crate 依赖。后续业务服务只依赖自己的私有 crate，不得依赖账号领域、仓储或迁移。
 - **端口与适配器**：core 只定义端口（trait）；基础设施与平台能力提供适配器（实现）；装配层把适配器接到用例上。
 - **按职责分层**：按变化率和业务边界分层，而不是按技术栈堆目录。
 - **可替换实现**：数据库、HTTP 客户端、日志、配置都在外层，core 只依赖接口。
@@ -272,7 +274,7 @@ sequenceDiagram
 - **同源**：浏览器看到的始终是前台站点的域名，所以 Cookie 是第一方的，`SameSite=Lax` 与「写接口只收 JSON」这套 CSRF 防护成立；不需要开放 CORS。
 - **公开站点后端地址在构建时固化**（保留的 `BACKEND_URL` 构建参数指向 accounts-service），运行时改环境变量无效。完整部署中由 `edge` 把 `/api/*` 直接转给账号服务；Next.js rewrite 仅供本地开发。
 - **Next.js rewrite 不会追加 `X-Forwarded-For`**，所以独立开发模式必须关闭 `trust_forwarded_for`。完整部署中 nginx 网关覆盖写该头并把 `/api/` 转给账号服务；账号服务不对外发布端口，外部无法绕过网关，详见 `docs/guides/deployment.md`。
-- 前端按后端返回的**错误码**（不是文案）取翻译，所以提示语言跟随界面语言；契约细节见 `frontend-public/README.md`。
+- 前端按后端返回的**错误码**（不是文案）取翻译，所以提示语言跟随界面语言；契约细节见 `frontends/public/README.md`。
 
 身份边界与其他应用的接入方式见 [`docs/guides/accounts-integration.md`](../guides/accounts-integration.md)：其他业务后端可将原始会话 Cookie 转发给账号服务的 `/auth/me` 验证后使用返回的用户 ID；不得信任浏览器自报的用户 ID，也不得直接访问账号 Redis 或数据库。当前不提供 JWT/OIDC。
 

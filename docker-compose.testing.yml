@@ -9,6 +9,7 @@
 # 连接串：
 #   DATABASE_URL=postgres://testuser:testpass@localhost:5433/testdb
 #   REDIS_URL=redis://:redis123@localhost:6390/0
+#   AGENT_TRACING_DATABASE_URL=postgres://agent_tracing:tracepass@localhost:5434/agent_tracing_dev
 #
 # 端口特意用 5433 / 6390，避开本机上其他项目常用的 5432 / 6379；
 # 不写 container_name，避免和别的 compose 项目的容器重名。
@@ -34,6 +35,23 @@ services:
       retries: 15
     restart: unless-stopped
 
+  tracing-postgres:
+    image: postgres:17-alpine
+    ports:
+      - "127.0.0.1:5434:5432"
+    environment:
+      POSTGRES_USER: agent_tracing
+      POSTGRES_PASSWORD: tracepass
+      POSTGRES_DB: agent_tracing_dev
+    volumes:
+      - tracing-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agent_tracing -d agent_tracing_dev"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+    restart: unless-stopped
+
   redis:
     image: redis:7-alpine
     ports:
@@ -48,3 +66,4 @@ services:
 
 volumes:
   postgres-data:
+  tracing-postgres-data:

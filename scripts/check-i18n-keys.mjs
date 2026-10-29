@@ -3,8 +3,8 @@
  * 校验前端的 en/zh 文案文件 key 一一对应、无缺 key。
  *
  * 覆盖的文案文件对（相对仓库根），**只检查实际存在的**，所以加了新前端后在这里登记即可：
- *   - frontend-public/messages/{en,zh}.json   （next-intl，SSR cookie 模式）
- *   - frontend-admin/src/locales/{en,zh}.json （react-i18next，客户端模式；管理后台复制进来之后才有）
+ *   - frontends/public/messages/{en,zh}.json   （next-intl，SSR cookie 模式）
+ *   - frontends/admin/src/locales/{en,zh}.json （react-i18next，客户端模式；管理后台复制进来之后才有）
  *
  * 退出码：0 = 全部对齐；1 = 存在缺失/多余 key 或文件读取失败。
  *
@@ -26,8 +26,8 @@ const REPO_ROOT = path.resolve(SCRIPT_DIR, "..");
 
 /** 内置的文案文件对，路径相对仓库根；实际校验时只保留两个文件都存在的。 */
 const KNOWN_LOCALE_PAIRS = [
-  ["frontend-public/messages/en.json", "frontend-public/messages/zh.json"],
-  ["frontend-admin/src/locales/en.json", "frontend-admin/src/locales/zh.json"],
+  ["frontends/public/messages/en.json", "frontends/public/messages/zh.json"],
+  ["frontends/admin/src/locales/en.json", "frontends/admin/src/locales/zh.json"],
 ];
 
 /** 两个文件都存在的内置文案对。 */

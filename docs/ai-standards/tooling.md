@@ -29,6 +29,7 @@
 | `just run` / `just down` | 启停本地 API、公开站点、管理后台和账号 UI 第二宿主；`run` 自动安装前端依赖、打印 URL 并读取 `config.toml` 与 `.env.local` |
 | `just run backend` | 只启动账号 API；URL 由 `APP_SERVER__PORT` 决定（默认 8080） |
 | `just run accounts-host` | 单独启动第二宿主（需要已有 API），默认 URL `http://127.0.0.1:4174` |
+| `just view [路径]` / `just diff [路径]` | 用 Rust `xtask` 打开本机文件与 Git 改动查看器；需要 Git 和浏览器，详见 [查看器指南](../guides/file-viewer.md) |
 | `just run docker` / `just down docker` | Docker 整栈启动 / 停止，等价于 `just stack-up` / `just stack-down` |
 | `just check` | 只检查能否编译（写代码时最常用） |
 | `just sqlx-prepare` | 用真实本地 PostgreSQL 更新 `.sqlx/` 编译期查询元数据（先 `just db-up`，需安装 `sqlx-cli`） |
@@ -94,7 +95,7 @@
 | `cargo fmt --check` | 改了 `.rs` | 格式 |
 | `cargo clippy -- -D warnings` | 改了 `.rs`、`Cargo.toml`、`Cargo.lock` | 警告 |
 | 层间依赖方向守卫测试 | 改了任何 `Cargo.toml` | 违规依赖（clippy 拦不住这个） |
-| 前端类型检查 + lint | 改了 `frontend-public/` | 前端错误 |
+| 前端类型检查 + lint | 改了 `frontends/public/` | 前端错误 |
 | i18n key 对齐 | 改了 `messages/*.json` | en/zh 缺 key |
 | PRD 归档门禁 | 改了 `tasks/` 根目录或 `tasks/archive/` 下的 PRD | **新归档**的 PRD 必须过 `--archive-ready`（pending 里的不检查；改动已归档 PRD 的验收记录也不重新裁决） |
 | PRD 锁冲突 | 改了 `tasks/pending/`、`tasks/evidence/` | 只警告：该 PRD 正被其他会话执行 |

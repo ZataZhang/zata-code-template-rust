@@ -1,0 +1,30 @@
+# Agent tracing 是独立微服务，数据库和 producer 凭据不与 accounts-service 共用。
+
+[server]
+host = "127.0.0.1"
+port = 8090
+
+[logging]
+level = "info"
+json = false
+
+[database]
+# 通过 APP_DATABASE__URL 注入 tracing 专属 PostgreSQL 连接串。
+max_connections = 10
+timeout_secs = 3
+
+[accounts]
+admin_auth_url = "http://accounts:8080/admin/auth/me"
+admin_cookie_name = "admin_session"
+request_timeout_secs = 2
+
+[producer]
+# 通过 APP_PRODUCER__CREDENTIALS_JSON 注入 JSON 数组；token 至少 32 字符。
+credentials_json = "[]"
+
+[otlp]
+# 空值时不装配 exporter、不产生网络请求。设置 APP_OTLP__TRACES_ENDPOINT 启用。
+service_name = "agent-tracing"
+service_version = "0.1.0"
+environment = "development"
+timeout_secs = 2

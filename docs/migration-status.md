@@ -2,7 +2,7 @@
 
 本仓库是 `zata_code_template`（Python / FastAPI）的 Rust 版。迁移**分阶段**进行，先做一条最小竖切跑通，再逐步搬。本页记录已经迁移的、刻意推迟的，以及推迟的原因，便于接着做。
 
-> 状态更新日期：2026-10-29。阶段 1（骨架）、2（认证竖切，含限流）、3（前台站点）、4（PRD 工具链，Rust 重写）、5（管理员账号与管理后台）、6（部署、配置与备份）已完成；账号与认证现已作为独立 `accounts-service` 装配和部署，并新增可被不同前端宿主安装的账号 UI 包。
+> 状态更新日期：2026-10-29。阶段 1–6 已完成；账号与认证作为第一个 `accounts-service` 独立部署，并有可被不同宿主安装的账号 UI 包。第二个后端服务 `agent-tracing` 与独立前端 `frontends/tracing/` 已实现；构建与静态验证结果及人工验收状态以对应 PRD 为准。
 
 ## 已迁移
 
@@ -17,10 +17,10 @@
 | 数据库连接池 | `services/accounts/crates/infrastructure/src/persistence.rs` | sqlx，惰性重连 |
 | 优雅退出 | `services/accounts/src/shutdown.rs` | Ctrl+C / SIGTERM |
 | 统一命令入口 | `justfile` | 精简重写（约 90 行），不是照搬 1500 行的 `justfile.shared` |
-| 本地中间件 | `docker-compose.testing.yml` | PostgreSQL + Redis，端口 5433 / 6390 |
+| 本地中间件 | `docker-compose.testing.yml` | accounts PostgreSQL、tracing 专属 PostgreSQL 与 Redis，端口 5433 / 5434 / 6390 |
 | 镜像 | `Dockerfile` | 多阶段构建，非 root |
 | AI 规范 | `AGENTS.md`、`CLAUDE.md`、`docs/ai-standards/` | 按 Rust 重写，保留与语言无关的原则 |
-| Skills | `skills/idea-inbox`、`skills/code-reviewer` | idea-inbox 原样迁移；code-reviewer 改写为 Rust 版 |
+| Skills | `~/code/zata_code_template/skills/`（唯一维护源） | 本仓库不保留副本；`.template-sync` 也不复制 skill 目录 |
 | 任务目录骨架 | `tasks/{inbox,pending,archive}` | 流程约定见 `docs/guides/idea-inbox.md` |
 
 ### 阶段 2：认证竖切
@@ -41,10 +41,10 @@
 
 | 内容 | 位置 | 说明 |
 |---|---|---|
-| 前台站点 | `frontend-public/` | 从 Python 模板复制，并**适配 Rust 后端的接口契约**：登录字段 `identifier`→`email`、返回结构 `{user:{id,email}}`、去掉 `display_name`、注册后自动登录、密码规则 8 字符/128 字节、错误按 `code` 翻译、429 显示等待时间 |
+| 前台站点 | `frontends/public/` | 从 Python 模板复制，并**适配 Rust 后端的接口契约**：登录字段 `identifier`→`email`、返回结构 `{user:{id,email}}`、去掉 `display_name`、注册后自动登录、密码规则 8 字符/128 字节、错误按 `code` 翻译、429 显示等待时间 |
 | 修掉的原有问题 | 同上 | ① 全局 401 拦截器会在登录失败时整页刷新，吞掉错误提示；② `language-switcher` 的 lint 错误（`react-hooks/immutability`）；③ 文案里的 Python 模板描述（Ruff、Alembic、双认证域、双前端、`src/backend/...`）改成对 Rust 项目真实成立的说法 |
-| 独立 pnpm 项目 | `frontend-public/pnpm-workspace.yaml`、`frontend-public/Dockerfile` | 不再是 Rust/Cargo workspace 成员；Dockerfile 以 `BACKEND_URL` 构建参数传入账号服务地址 |
-| 真实浏览器端到端测试 | `frontend-public/e2e/auth.e2e.mjs`、`scripts/web-e2e.sh`、`just web-e2e` | 20 项检查：注册/登录/退出/Cookie 属性/限流（中英文）/账号互不影响；自动起停数据库、后端、前端并清理 |
+| 独立 pnpm 项目 | `frontends/public/pnpm-workspace.yaml`、`frontends/public/Dockerfile` | 不再是 Rust/Cargo workspace 成员；Dockerfile 以 `BACKEND_URL` 构建参数传入账号服务地址 |
+| 真实浏览器端到端测试 | `frontends/public/e2e/auth.e2e.mjs`、`scripts/web-e2e.sh`、`just web-e2e` | 20 项检查：注册/登录/退出/Cookie 属性/限流（中英文）/账号互不影响；自动起停数据库、后端、前端并清理 |
 | pre-commit 钩子 | `.pre-commit-config.yaml`、`scripts/check-commit-msg.sh`、`scripts/check-i18n-keys.mjs` | 文件卫生、cargo fmt/clippy、依赖方向守卫、前端类型/lint、i18n 对齐、提交信息格式；负控已验证（坏格式、违规依赖、坏提交信息都被拦） |
 | CI | `.github/workflows/ci.yml` | 5 个任务：hooks / rust / web / web-e2e / docker；已过 `actionlint`，**尚未在真实 GitHub runner 上运行** |
 | 前端 just 命令 | `justfile` | `web-install`、`web-dev`、`web-check`、`web-e2e`、`web-docker-build`、`ci-all` |
@@ -61,15 +61,15 @@
 | 管理后台接口 | `services/accounts/crates/api/src/admin.rs`、`services/accounts/crates/api/src/http.rs` | `/admin/auth/*`、`/admin/users*`；错误映射、客户端 IP、Cookie 辅助从 `auth.rs` 抽到 `http.rs` 共用 |
 | 管理员仓储、用户仓储扩展 | `services/accounts/crates/infrastructure/src/persistence/` | 列表用固定 SQL + 参数绑定，关键字转义 `LIKE` 通配符 |
 | 配置 | `services/accounts/crates/infrastructure/src/config.rs`、`config.toml` `[admin]` | 引导账号（密码在 `Debug` 里隐藏）、会话时长、Cookie 名、更严的默认限流 |
-| 管理后台前端 | `frontend-admin/` | 从 Python 模板复制并**大幅精简**：只保留登录与用户管理（搜索、状态筛选、分页、启用/停用，中英双语）；删掉演示页面（仪表盘假数据、任务、项目、应用、聊天、帮助、设置表单、运行轨迹、What's New）；错误按后端的 `code` 翻译；修掉模板里 `instanceof AxiosError` 永不命中（请求被包装成 `ApiRequestError`）导致会话过期不跳转的问题；独立 pnpm 项目，Dockerfile 用 `BACKEND_UPSTREAM` 在运行时指定后端 |
-| 测试 | `services/accounts/crates/core/src/admin/tests.rs`、`services/accounts/crates/api/tests/admin_routes.rs`、`services/accounts/tests/http_end_to_end.rs`、`frontend-admin/e2e/admin.e2e.mjs` | 隔离、限流独立、停用立即生效、列表边界、`RequireJson`；真实 PostgreSQL/Redis；真实 Chrome 33 项检查；负控：让管理员复用普通域的键前缀，真实端到端用例变红 |
+| 管理后台前端 | `frontends/admin/` | 从 Python 模板复制并**大幅精简**：只保留登录与用户管理（搜索、状态筛选、分页、启用/停用，中英双语）；删掉演示页面（仪表盘假数据、任务、项目、应用、聊天、帮助、设置表单、运行轨迹、What's New）；错误按后端的 `code` 翻译；修掉模板里 `instanceof AxiosError` 永不命中（请求被包装成 `ApiRequestError`）导致会话过期不跳转的问题；独立 pnpm 项目，Dockerfile 用 `BACKEND_UPSTREAM` 在运行时指定后端 |
+| 测试 | `services/accounts/crates/core/src/admin/tests.rs`、`services/accounts/crates/api/tests/admin_routes.rs`、`services/accounts/tests/http_end_to_end.rs`、`frontends/admin/e2e/admin.e2e.mjs` | 隔离、限流独立、停用立即生效、列表边界、`RequireJson`；真实 PostgreSQL/Redis；真实 Chrome 33 项检查；负控：让管理员复用普通域的键前缀，真实端到端用例变红 |
 | just 命令 | `justfile` | `web-admin-install`、`web-admin-dev`、`web-admin-check`、`web-admin-test`、`web-admin-docker-build`；`web-e2e` 同时跑两个前端 |
 
 ### 阶段 6：部署、配置与备份
 
 | 内容 | 位置 | 说明 |
 |---|---|---|
-| 整套服务的 compose | `docker-compose.yml`、`docker-compose.accounts.yml`、`just stack-*`、`services/accounts/src/bin/compose_config.rs` | PostgreSQL + Redis + 账号服务 + 前台 + 管理后台；部署配置从独立 Nacos Properties Data ID 读取并只注入 Compose 子进程，不生成本地部署环境文件；accounts 用 `/ready` 做健康检查 |
+| 整套服务的 compose | `docker-compose.yml`、`docker-compose.accounts.yml`、`just stack-*`、`services/accounts/src/bin/compose_config.rs` | PostgreSQL + Redis + accounts + 前台 + 管理后台；部署配置从独立 Nacos Properties Data ID 读取并只注入 Compose 子进程，不生成本地部署环境文件；accounts 用 `/ready` 做健康检查 |
 | Nacos Compose 配置入口 | `services/accounts/crates/infrastructure/src/config/{nacos,compose}.rs`、`scripts/compose-config.sh` | 复用应用 Nacos HTTP 读取器，强制独立 Compose Data ID；严格解析白名单字面量属性并在 Docker 启动前校验；Nacos 错误时不回退本地配置 |
 | 前台入口代理 `edge` | `deploy/edge.nginx.conf` | **验证中发现 Next.js 的 rewrite 代理不会追加 `X-Forwarded-For`**，直接暴露它再开 `trust_forwarded_for` 会让伪造 IP 绕过限流（复现：21 次失败全部通过）。因此前台经 nginx 访问，nginx 覆盖写该头并把 `/api/` 直接转给账号服务；`web` 与 `accounts` 不发布端口。管理后台的 nginx 同样补了 `TRUSTED_PROXY_CIDR`（前面还有 HTTPS 代理时还原真实客户端 IP）。已更正 system-design、前台 README、config.toml 里的错误说法 |
 | 修掉的 Dockerfile 问题 | `Dockerfile` | 加入 `tools/xtask` 之后后端镜像一直构建失败（工作区成员 `tools/*` 没拷进构建上下文），CI 的 docker 任务本会红；compose 首次构建时才暴露 |
@@ -95,11 +95,22 @@
 | 可复用账号 UI | `packages/accounts-ui/`、`examples/accounts-host/` | 普通用户注册/登录组件、可配置 API base 和 HTTP 客户端打包为 npm tarball；第二宿主实际安装该包并用浏览器验证注册、会话、退出 |
 | 接入边界 | `docs/guides/accounts-integration.md` | 可以为不同应用独立部署各自账号实例，或明确选择共享账号域；当前没有 tenant/app_id 隔离，不能把共享实例描述为跨应用数据隔离 |
 
+### 阶段 7：Agent tracing 子服务（2026-10-29）
+
+| 内容 | 位置 | 说明 |
+|---|---|---|
+| 独立 tracing 后端 | `services/agent-tracing/` | 独立 Rust 服务、core/API/infrastructure crate、配置和 PostgreSQL migration；不依赖 accounts 私有 crate，也不读取 accounts 数据库 |
+| 通用 producer 接口 | `/api/v1/ingest/runs/{run_id}/events`、`event-batch.schema.json` | 有界 HTTP/JSON batches、source/project 固定凭据、连续序号、持久化 checkpoint、精确重试幂等及稳定错误码；接入细节见 `services/agent-tracing/README.md` |
+| Run / Thread 诊断 | `services/agent-tracing/crates/core/src/projection.rs`、`crates/api/src/admin/` | 追加事件投影成 Run/span 树与 Thread 账本；管理员 Cookie 经 accounts 公开 HTTP 校验；终态事件支持受限原始导出 |
+| 独立 tracing 前端 | `frontends/tracing/` | Vite/React 独立项目和镜像，提供 Run/Thread 筛选、五泳道时间轴、详情检查器、内容搜索、导出；nginx 同源代理认证、查询与 producer 接入 |
+| 完整部署与备份 | `docker-compose.yml`、`scripts/lib/db-{backup,restore}.sh`、`justfile` | tracing 独立数据库和 volume；本地、Compose、CI/CD 与备份/恢复分别覆盖两个后端及三个独立 UI 入口 |
+| 配置与文档 | `deploy/nacos/rust-study-compose.properties.example`、`docs/guides/`、`docs/architecture/system-design.md` | producer secrets、服务边界、接入契约、代理、安全和备份要求同步记录；验证与人工验收进度见 pending PRD |
+
 ### 阶段 4：PRD 工具链（用 Rust 重写）
 
 | 内容 | 位置 | 说明 |
 |---|---|---|
-| PRD skill | `skills/prd/`（SKILL.md、模板、references） | 从 Python 模板复制，改写了对 Python 脚本的引用 |
+| PRD skill | `~/code/zata_code_template/skills/prd/` | 唯一维护源位于模板仓库；本仓库只保留 Rust `xtask` 工具实现，不再保存 skill 副本 |
 | 契约解析（唯一实现） | `tools/xtask/src/prd/contract.rs` | 验收清单、`Human-Confirmed` 分组、三态横幅、Change Log；`CONTRACT_VERSION` 与 SKILL.md 的标记由测试钉死 |
 | 门禁 | `tools/xtask/src/prd/check/` | 必需章节、Part A 元数据泄漏、解读回显、FR 编号、oracle 模式（分级）、交付依赖、最终对账、横幅一致性；三档严格度 |
 | 执行锁 | `tools/xtask/src/prd/lock.rs` | 文件锁串行化；心跳加 worktree 活性判过期；接管留档；归属移交 |
@@ -121,15 +132,14 @@
 | 管理员的增删、改密码、角色与细粒度权限、操作审计、二次验证 | 阶段 5 只做了「环境变量引导的单一管理员体系」；密码没有轮换机制 | 有真实运营需求时 |
 | 「登出所有设备」、会话列表 | 需要按用户索引会话（Redis 里目前只有 令牌哈希→用户 ID 的映射） | 有需求时 |
 | 请求 ID / 关联日志中间件 | Python 版有 request context；目前只有 `TraceLayer` | 排障遇到困难时 |
-| 管理后台的运行轨迹页面及其后端 | 依赖业务有了才有意义 | 有真实流量需求时 |
-| `/metrics`（Prometheus）、运行轨迹、OTLP 导出 | 依赖业务有了才有意义 | 有真实流量需求时 |
+| `/metrics`（Prometheus）与完整可观测性栈 | 当前 tracing 提供业务 Agent Run/Thread 诊断与可选 OTLP traces，不提供 Prometheus metrics 或通用服务 APM | 有明确指标采集需求时 |
 | 沙箱执行后端（filesystem / Docker / E2B） | 面向特定的 Agent 场景，不是通用底座 | 有具体需求时再做 |
 | `just ai implement`（AI 执行器 + 独立 verifier 的编排）、证据密钥扫描、人审清单交互 HTML | PRD 工具链里**没有**移植的部分，见阶段 4 | 有具体需求时 |
 | Python 版 `justfile.shared` 里的 `worktree`、`e2e`、`release`、`ai *` | 体量大，且很多绑定 uv/pytest/Alembic；Rust 已有轻量的 copy/sync 入口，但未照搬这些配方 | 按需逐个搬 |
 | Python 版发布 zip 包（模板自身的分发方式） | 这里的 `cd.yml` 发布的是镜像；模板自己的 zip 分发另议 | 决定模板分发方式后 |
 | 可观测性栈（Prometheus / Grafana / Loki / Vector 的 compose 与配置） | 后端还没有 `/metrics`，配了也没数据可看 | 有 `/metrics` 之后 |
 | MkDocs 站点 | 改用 `cargo doc` + Markdown；是否需要站点另议 | 按需 |
-| 其他 skills：`decision-board`、`feature-docs`、`git-diff-report`、`interactive-ui-prototype`、`manage-roadmap`、`rebase-merge-branches`、`api-help-docs` | 尚未逐个评估是否与语言无关、是否依赖 Python 脚本 | 按需评估 |
+| 其他模板 skills：`decision-board`、`feature-docs`、`git-diff-report`、`interactive-ui-prototype`、`manage-roadmap`、`api-help-docs` 等 | 不在本仓库维护副本；统一由 `~/code/zata_code_template/skills/` 管理，具体使用时按权威 skill 的适用范围评估 | 按需使用或评估 |
 | `zata-writer`、`zatatree-blog` | 个人写作类 skill，大概率不属于工程模板 | 不迁移，除非另有决定 |
 
 ## 已知偏差与需要你知道的

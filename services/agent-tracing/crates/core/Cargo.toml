@@ -1,0 +1,18 @@
+[package]
+name = "tpl-agent-tracing-core"
+description = "Agent tracing 事件契约、业务规则与投影。"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+time = { workspace = true, features = ["serde-well-known", "formatting", "parsing"] }
+
+[lints]
+workspace = true

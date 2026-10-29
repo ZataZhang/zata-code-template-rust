@@ -1,0 +1,13 @@
+**
+!frontends/public/
+!frontends/public/**
+!packages/
+!packages/accounts-ui/
+!packages/accounts-ui/**
+frontends/public/node_modules/
+frontends/public/.next/
+frontends/public/tasks/
+**/.env*
+packages/accounts-ui/node_modules/
+packages/accounts-ui/dist/
+packages/accounts-ui/*.tgz

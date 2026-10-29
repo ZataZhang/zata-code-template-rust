@@ -68,17 +68,17 @@ jobs:
     timeout-minutes: 15
     defaults:
       run:
-        working-directory: frontend-public
+        working-directory: frontends/public
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
         with:
-          package_json_file: frontend-public/package.json
+          package_json_file: frontends/public/package.json
       - uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: pnpm
-          cache-dependency-path: frontend-public/pnpm-lock.yaml
+          cache-dependency-path: frontends/public/pnpm-lock.yaml
       # 纯静态 JSON 校验，不需要装依赖，放最前面让缺 key 秒级拦红。
       - name: Check i18n message key alignment
         working-directory: .
@@ -101,17 +101,17 @@ jobs:
     timeout-minutes: 20
     defaults:
       run:
-        working-directory: frontend-admin
+        working-directory: frontends/admin
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
         with:
-          package_json_file: frontend-admin/package.json
+          package_json_file: frontends/admin/package.json
       - uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: pnpm
-          cache-dependency-path: frontend-admin/pnpm-lock.yaml
+          cache-dependency-path: frontends/admin/pnpm-lock.yaml
       - name: Check i18n message key alignment
         working-directory: .
         run: node scripts/check-i18n-keys.mjs
@@ -125,11 +125,32 @@ jobs:
         run: pnpm test:browser:install
       - run: pnpm test
 
+  web-tracing:
+    name: Tracing frontend (typecheck and build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontends/tracing
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: frontends/tracing/package.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: frontends/tracing/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm build
+
   # 真实浏览器端到端：Chrome -> Next.js -> Rust 后端 -> PostgreSQL / Redis。
   # 放在 rust 与 web 之后，基础检查都没过时不浪费这十几分钟。
   web-e2e:
     name: Browser end-to-end
-    needs: [rust, web, web-admin]
+    needs: [rust, web, web-admin, web-tracing]
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -141,14 +162,15 @@ jobs:
           tool: just
       - uses: pnpm/action-setup@v6
         with:
-          package_json_file: frontend-public/package.json
+          package_json_file: frontends/public/package.json
       - uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: pnpm
-          cache-dependency-path: frontend-public/pnpm-lock.yaml
+          cache-dependency-path: frontends/public/pnpm-lock.yaml
       - run: just web-install
       - run: just web-admin-install
+      - run: just web-tracing-install
       - name: Show Chrome version
         run: google-chrome --version
       - name: Run browser tests
@@ -168,7 +190,7 @@ jobs:
   # 伪造 X-Forwarded-For 不能绕过限流、备份与恢复）。
   stack:
     name: Full stack (compose smoke test)
-    needs: [rust, web, web-admin]
+    needs: [rust, web, web-admin, web-tracing]
     runs-on: ubuntu-latest
     timeout-minutes: 55
     steps:
@@ -181,7 +203,7 @@ jobs:
       - name: Run isolated Nacos and Compose validation
         run: python3 scripts/ci-nacos-stack.py
 
-  # 三个镜像能构建出来（不推送）。
+  # 五个独立服务镜像能构建出来（不推送）。
   docker:
     name: Docker images build
     runs-on: ubuntu-latest
@@ -191,6 +213,10 @@ jobs:
       - name: Build accounts service image
         run: docker build -t tpl-accounts:ci .
       - name: Build frontend image
-        run: docker build -f frontend-public/Dockerfile --build-arg BACKEND_URL=http://accounts:8080 -t tpl-web:ci .
+        run: docker build -f frontends/public/Dockerfile --build-arg BACKEND_URL=http://accounts:8080 -t tpl-web:ci .
       - name: Build admin frontend image
-        run: docker build -t tpl-admin:ci frontend-admin
+        run: docker build -t tpl-admin:ci frontends/admin
+      - name: Build Agent tracing service image
+        run: docker build -f services/agent-tracing/Dockerfile -t tpl-agent-tracing:ci .
+      - name: Build tracing frontend image
+        run: docker build -t tpl-tracing-ui:ci frontends/tracing

@@ -1,0 +1,25 @@
+[package]
+name = "tpl-agent-tracing"
+description = "独立 Agent Run tracing 微服务的装配层。"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "agent-tracing-service"
+path = "src/main.rs"
+
+[dependencies]
+tpl-agent-tracing-api.workspace = true
+tpl-agent-tracing-core.workspace = true
+tpl-agent-tracing-infrastructure.workspace = true
+
+anyhow.workspace = true
+axum.workspace = true
+sqlx.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[lints]
+workspace = true

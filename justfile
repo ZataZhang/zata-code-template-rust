@@ -15,7 +15,7 @@ default:
 sync:
     cargo fetch --locked
 
-# 启动本地开发栈：账号 API、公开站点、管理后台和第二宿主；自动安装前端依赖并打印 URL
+# 启动本地开发栈：账号 API、Agent tracing、独立前端与 UI 宿主；自动安装前端依赖并打印 URL
 run target="all":
     "{{justfile_directory()}}/scripts/dev-services.sh" run "{{ target }}"
 
@@ -146,20 +146,20 @@ accounts-down:
     ./scripts/compose-config.sh compose accounts stop accounts
 
 # ---------------------------------------------------------------------------
-# 前台站点（frontend-public，Next.js）
+# 前台站点（frontends/public，Next.js）
 # ---------------------------------------------------------------------------
 
 # 安装前端依赖（按 pnpm-lock.yaml 精确安装）
 web-install: accounts-ui-build
-    cd frontend-public && pnpm install --frozen-lockfile
+    cd frontends/public && pnpm install --frozen-lockfile
 
 # 单独启动公开前端；/api/* 代理到后端。通常直接用 `just run` 启动整套本地服务
 web-dev:
-    cd frontend-public && pnpm dev
+    cd frontends/public && pnpm dev
 
 # 前端检查：类型 + lint + 生产构建
 web-check: check-i18n accounts-ui-check
-    cd frontend-public && pnpm typecheck && pnpm lint && pnpm build
+    cd frontends/public && pnpm typecheck && pnpm lint && pnpm build
 
 # 真实浏览器端到端测试：启动数据库、后端、前端，用 Chrome 走完注册/登录/退出/限流（需要本机有 Chrome）
 web-e2e: accounts-ui-check
@@ -167,34 +167,55 @@ web-e2e: accounts-ui-check
 
 # 构建前端镜像。后端地址必须在构建时给（Next 的 rewrites 在构建时固化）
 web-docker-build backend_url="http://accounts:8080":
-    docker build -f frontend-public/Dockerfile --build-arg BACKEND_URL={{ backend_url }} -t tpl-web:local .
+    docker build -f frontends/public/Dockerfile --build-arg BACKEND_URL={{ backend_url }} -t tpl-web:local .
 
 # ---------------------------------------------------------------------------
-# 管理后台（frontend-admin，Vite + React）
+# 管理后台（frontends/admin，Vite + React）
 # ---------------------------------------------------------------------------
 
 # 安装管理后台依赖（按 pnpm-lock.yaml 精确安装）
 web-admin-install:
-    cd frontend-admin && pnpm install --frozen-lockfile
+    cd frontends/admin && pnpm install --frozen-lockfile
 
 # 单独启动管理后台开发服务器（默认 5173）；/api/* 代理到后端。通常直接用 `just run` 启动整套本地服务
 web-admin-dev:
-    cd frontend-admin && pnpm dev
+    cd frontends/admin && pnpm dev
 
 # 管理后台检查：类型 + lint + 未使用代码 + 格式 + 生产构建（单元/组件测试见 web-admin-test）
 web-admin-check: check-i18n
-    cd frontend-admin && pnpm typecheck && pnpm lint && pnpm knip && pnpm format:check && pnpm build
+    cd frontends/admin && pnpm typecheck && pnpm lint && pnpm knip && pnpm format:check && pnpm build
 
-# 管理后台的浏览器组件测试（vitest + Playwright Chromium；首次需要 `cd frontend-admin && pnpm test:browser:install`）
+# 管理后台的浏览器组件测试（vitest + Playwright Chromium；首次需要 `cd frontends/admin && pnpm test:browser:install`）
 web-admin-test:
-    cd frontend-admin && pnpm test
+    cd frontends/admin && pnpm test
 
 # 构建管理后台镜像。账号服务地址在运行时用环境变量 BACKEND_UPSTREAM 指定（默认 accounts:8080）
 web-admin-docker-build:
-    docker build -t tpl-admin:local frontend-admin
+    docker build -t tpl-admin:local frontends/admin
 
 # ---------------------------------------------------------------------------
-# 整套服务（docker-compose.yml：账号服务 + PostgreSQL + Redis + 前台 + 管理后台）
+# Agent tracing 管理界面（frontends/tracing，独立 Vite + React 服务）
+# ---------------------------------------------------------------------------
+
+web-tracing-install:
+    cd frontends/tracing && pnpm install --frozen-lockfile
+
+web-tracing-dev:
+    cd frontends/tracing && pnpm dev
+
+# tracing UI 类型检查与生产构建
+web-tracing-check:
+    cd frontends/tracing && pnpm typecheck && pnpm build
+
+web-tracing-docker-build:
+    docker build -f frontends/tracing/Dockerfile -t tpl-tracing-ui:local frontends/tracing
+
+# 构建 Agent tracing 后端独立镜像
+tracing-docker-build:
+    docker build -f services/agent-tracing/Dockerfile -t tpl-agent-tracing:local .
+
+# ---------------------------------------------------------------------------
+# 整套服务（账号 + Agent tracing、各自 PostgreSQL、Redis 与三个独立前端入口）
 # ---------------------------------------------------------------------------
 
 # 从 Nacos 加载部署配置并构建、启动整套服务；不会生成本地部署环境文件
@@ -213,6 +234,14 @@ stack-reset:
 stack-logs *services:
     ./scripts/compose-config.sh compose full logs -f --tail=100 {{ services }}
 
+# 单独构建并启动 tracing 服务、专属数据库和 tracing UI；accounts 仍作为管理员认证依赖启动
+tracing-up:
+    ./scripts/compose-config.sh compose full up -d --build --wait tracing-ui
+
+# 停止 tracing 服务和 UI，但保留 tracing 数据库及数据卷
+tracing-down:
+    ./scripts/compose-config.sh compose full stop tracing-ui agent-tracing
+
 # 对着正在运行的整套服务做冒烟测试：入口、登录与停用、伪造 IP 限流、备份恢复（先 `just stack-up`）
 stack-smoke:
     ./scripts/stack-smoke.sh
@@ -226,7 +255,7 @@ db-restore file:
     ./scripts/db-restore.sh {{ file }}
 
 # 提交前的完整检查：后端 + 前端
-ci-all: ci web-check web-admin-check
+ci-all: ci web-check web-admin-check web-tracing-check
 
 clean:
     cargo clean

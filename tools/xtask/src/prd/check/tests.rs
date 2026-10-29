@@ -38,45 +38,6 @@ fn the_baseline_fixture_passes_every_gate() {
 }
 
 #[test]
-fn the_unfilled_skill_template_is_rejected_for_the_right_reasons() {
-    // 模板本身带着占位符，必须被拒绝；每条拒绝理由都要对得上具体的占位符。
-    let template = include_str!("../../../../../skills/prd/templates/prd-visual-template.md");
-    let issues = messages(&validate(template, Gate::ArchiveReady));
-    let joined = issues.join("\n");
-
-    assert!(
-        joined.contains("invalid tier \"R0|R1|R2|R3\""),
-        "tier 占位符：{joined}"
-    );
-    assert!(
-        joined.contains("Final Reconciliation field \"Interpretation\" is incomplete"),
-        "{joined}"
-    );
-    assert!(
-        joined.contains("still says ⬜ 未开工"),
-        "横幅停在未开工：{joined}"
-    );
-    assert!(
-        issues.iter().any(|issue| issue.starts_with("- [ ]")),
-        "执行侧的空框：{joined}"
-    );
-
-    // 反过来：模板的结构本身是合规的，不该报缺章节、顺序、Part A 泄漏、FR 编号、解读回显。
-    for structural in [
-        "Missing required PRD section",
-        "must appear after",
-        "executor-only metadata",
-        "Functional Requirement IDs",
-        "Interpretation echo",
-    ] {
-        assert!(
-            !joined.contains(structural),
-            "模板结构不该被报 {structural:?}：{joined}"
-        );
-    }
-}
-
-#[test]
 fn missing_and_out_of_order_sections_are_reported() {
     let without = valid_prd().replace("## 11. Non-Goals\n\n- none\n\n", "");
     assert_single_issue(

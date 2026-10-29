@@ -14,7 +14,7 @@
 | Web 框架 | axum + tokio | 目前最主流，社区资料多，和 tower 生态配合好 |
 | 数据库 | sqlx（PostgreSQL） | 异步，SQL 在编译期检查，不用学 ORM 的 DSL，迁移用 `sqlx migrate` |
 
-前端先不做：frontend-admin 用 HTTP 对接 Rust 后端即可，等后端跑通后再复制过来。
+前端先不做：frontends/admin 用 HTTP 对接 Rust 后端即可，等后端跑通后再复制过来。
 
 ## 第 1 步：后端骨架（保留四层思想）
 
@@ -52,7 +52,7 @@ zata_rust_template/
 
 1. AGENTS.md / CLAUDE.md 和 docs/ai-standards/：把 Python 规则改成 Rust 版（cargo fmt、clippy、错误处理、`///` 文档、unsafe 规则）
 2. justfile 和 justfile.shared：统一入口 `just run / test / lint / sync`，内部换成 cargo 命令
-3. skills/：prd、idea-inbox 等基本原样复制
+3. Skills：统一使用 `~/code/zata_code_template/skills/` 作为唯一维护源；派生仓库不保存本地副本
 4. pre-commit：换成 `cargo fmt --check`、`cargo clippy -- -D warnings`
 5. Docker：多阶段构建，最终镜像只放一个二进制
 6. 通用的守卫测试和 hooks（文件行数限制、PRD 检查等）

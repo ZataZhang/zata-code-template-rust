@@ -1,4 +1,4 @@
 [alias]
-# cargo xtask <子命令>：本仓库的开发期工具（PRD 工具链、提交钩子的检查），源码在 tools/xtask。
+# cargo xtask <子命令>：本仓库的开发期工具（PRD、提交钩子检查、本机查看器），源码在 tools/xtask。
 # --quiet 让输出只剩工具自己的内容。
 xtask = "run --quiet --package xtask --"

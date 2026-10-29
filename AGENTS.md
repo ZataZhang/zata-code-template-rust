@@ -24,9 +24,9 @@
 | `docs/ai-standards/documentation.md` | 改动公共函数签名、配置项、业务流程；新增长期文档页 | 纯内部重构且无对外行为或文档变化 |
 | `docs/ai-standards/testing.md` | **任何代码变更开始前**；制定验证策略、收集证据或声称完成前必须重新核对；遇到测试失败时 | 仅改注释、纯文档排版或无可执行行为变化的纯配置 |
 | `docs/ai-standards/migrations.md` | 新增、修改任何服务的 `migrations/`；写或改任何 SQL 查询；改动数据库表结构 | 不涉及数据库时 |
-| `frontend-public/README.md`、`frontend-public/AGENTS.md` | 改动 `frontend-public/` 下任何内容；改动后端接口契约（字段、返回结构、错误码）；写前端代码前（Next.js 版本有破坏性变更，先读 `node_modules/next/dist/docs/`） | 只改后端内部实现、不影响接口契约时 |
+| `frontends/public/README.md`、`frontends/public/AGENTS.md` | 改动 `frontends/public/` 下任何内容；改动后端接口契约（字段、返回结构、错误码）；写前端代码前（Next.js 版本有破坏性变更，先读 `node_modules/next/dist/docs/`） | 只改后端内部实现、不影响接口契约时 |
 | `docs/guides/deployment.md`、`configuration.md`、`backup.md` | 改 `docker-compose.yml`、`deploy/`、Dockerfile、配置项、备份脚本、反向代理或限流相关的 IP 来源时 | 其他任务 |
-| `skills/prd/SKILL.md`、`docs/guides/prd-workflow.md` | 新增或执行 PRD（`tasks/pending/`）；改动 `tasks/` 下任何 PRD；提到「写 PRD」「按 PRD 实现」「归档」时 | 不涉及 PRD 时 |
+| `~/code/zata_code_template/skills/prd/`（唯一维护源）、`docs/guides/prd-workflow.md` | 新增或执行 PRD（`tasks/pending/`）；改动 `tasks/` 下任何 PRD；提到「写 PRD」「按 PRD 实现」「归档」时 | 不涉及 PRD 时 |
 | `docs/ai-standards/tooling.md` | 选择运行命令；改 `justfile` / Docker / compose 配置；增删依赖；撰写提交信息 | 已熟悉常用 `just` 命令、且本次不动工具链配置时 |
 
 ## Critical Summary
@@ -40,8 +40,8 @@
 - 生产路径不用 `unwrap()` / `expect()`，用 `?` 返回有语义的错误；库层用 `thiserror`，`anyhow` 只用在 `main` 等应用入口。
 - 变量命名必须具有来源、类型或状态语义，避免 `data`、`item`、`res`；用类型（enum、新类型）表达约束。
 - 新增或修改代码前先搜索现有实现；禁止复制粘贴后微调，参数超过 4 个时收敛到结构体。
-- 前端（`frontend-public/`）是后端之外的独立 Next.js 项目，只通过 `/api/*` HTTP 与后端通信。改后端接口契约时必须同步改 `frontend-public/lib/api/` 并重跑 `just web-e2e`（前端类型是手写的，编译器发现不了契约漂移）；前端按错误**码**取翻译，不要依赖后端文案。
-- 管理后台（`frontend-admin/`）同理：改 `/admin/*` 契约时同步改 `frontend-admin/src/api/` 并重跑 `just web-e2e`；管理员域与普通用户域必须保持隔离（独立表、Cookie、Redis 键命名空间、限流前缀），不要为了复用把它们合并。
+- 前端（`frontends/public/`）是后端之外的独立 Next.js 项目，只通过 `/api/*` HTTP 与后端通信。改后端接口契约时必须同步改 `frontends/public/lib/api/` 并重跑 `just web-e2e`（前端类型是手写的，编译器发现不了契约漂移）；前端按错误**码**取翻译，不要依赖后端文案。
+- 管理后台（`frontends/admin/`）同理：改 `/admin/*` 契约时同步改 `frontends/admin/src/api/` 并重跑 `just web-e2e`；管理员域与普通用户域必须保持隔离（独立表、Cookie、Redis 键命名空间、限流前缀），不要为了复用把它们合并。
 - 限流依赖 TCP 对端地址：账号服务只能经 `tpl_accounts::server::serve` 启动；不要为了「方便」信任 `X-Forwarded-For`（默认关闭，开启条件见 `config.toml`）；完整站点必须由会覆盖写该头的 nginx 代理，独立开发模式只绑定回环地址并关闭该信任（见 `docs/guides/deployment.md`）。
 - 含密码的类型手写 `Debug`；日志与错误响应不得泄漏密钥、内部原因或连接串。
 - 外部输入必须有上限与超时（请求体大小、集合长度、外部调用超时）。

@@ -1,0 +1,22 @@
+[package]
+name = "tpl-agent-tracing-api"
+description = "Agent tracing HTTP 接入与管理员查询 API。"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+tpl-agent-tracing-core.workspace = true
+
+axum.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+time = { workspace = true, features = ["serde-well-known", "formatting", "parsing"] }
+tokio.workspace = true
+tower-http = { workspace = true, features = ["trace", "timeout"] }
+tracing.workspace = true
+
+[lints]
+workspace = true

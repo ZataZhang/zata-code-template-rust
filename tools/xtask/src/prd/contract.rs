@@ -1,6 +1,6 @@
 //! PRD Machine Contract 的解析原语 —— PRD 格式的**唯一实现**。
 //!
-//! `skills/prd/SKILL.md` 的 `Machine Contract` 章节定义了 PRD 里若干**被机器解析**的格式：
+//! 上游模板仓库 `zata_code_template/skills/prd/` 的 `Machine Contract` 定义了 PRD 里若干**被机器解析**的格式：
 //! 验收清单的复选框、`Human-Confirmed` 分组、验收状态横幅、Change Log 条目。
 //!
 //! 为什么要做成一个库：Python 版里同一份解析被抄了三份（skill 的校验器、`just` 的看板、
@@ -14,7 +14,7 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-/// 本模块实现的 Machine Contract 版本；与 `SKILL.md` 的 `Machine-Contract-Version` 标记必须一致。
+/// 本模块实现的 Machine Contract 版本；权威规则由上游模板仓库的 PRD skill 维护。
 pub const CONTRACT_VERSION: u32 = 5;
 
 /// `[~]` 的标记字符：表示「等 runner 门禁，不计未勾」，绝不是「已完成」。
@@ -452,22 +452,6 @@ mod tests {
 ## 10. Functional Requirements
 - [ ] not part of the checklist
 ";
-
-    #[test]
-    fn contract_version_matches_the_marker_in_the_skill() {
-        // 契约文本（SKILL.md）与实现必须同版本：契约章节任何改动都要同步 bump 两处。
-        let skill = include_str!("../../../../skills/prd/SKILL.md");
-        let marker = Regex::new(r"(?m)^Machine-Contract-Version:\s*(\d+)\s*$").unwrap();
-        let declared: u32 = marker
-            .captures(skill)
-            .expect("SKILL.md 缺少 Machine-Contract-Version 标记")[1]
-            .parse()
-            .unwrap();
-        assert_eq!(
-            declared, CONTRACT_VERSION,
-            "SKILL.md 与 contract.rs 的契约版本不一致"
-        );
-    }
 
     #[test]
     fn checklist_counts_the_three_mark_kinds_and_ignores_fences_and_other_sections() {

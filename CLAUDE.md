@@ -13,8 +13,9 @@
 - 开始新的后端功能前，额外阅读 `docs/architecture/system-design.md`。
 - 任何代码变更开始前，以及收集验证证据或声称完成前，重新核对 `docs/ai-standards/testing.md`。
 - 修改任何 `Cargo.toml` 的 `[dependencies]` 前，先核对 `docs/ai-standards/architecture.md` 里的依赖方向。
-- 记录或总结「随手想法」时，遵循 `docs/guides/idea-inbox.md`（技能：`skills/idea-inbox`）。
-- 合并前评审用 `skills/code-reviewer`。
+- Skill 权威源统一为 `~/code/zata_code_template/skills/`；本仓库不保存 skill 副本，也不通过模板同步清单复制 skill 目录。
+- 记录或总结「随手想法」时，遵循 `docs/guides/idea-inbox.md` 与权威源中的 `idea-inbox` skill。
+- 合并前评审使用权威源中的 `code-reviewer` skill。
 - 本机的 `cargo` 可能不在 PATH：Homebrew 的 rustup 是 keg-only，需要先 `export PATH=/opt/homebrew/opt/rustup/bin:$PATH`。
 - 共享规范应放回 `docs/ai-standards/`，不要在本文件中复制成长篇正文。
 

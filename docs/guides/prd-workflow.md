@@ -1,7 +1,7 @@
 # PRD 工作流
 
 PRD（产品需求文档）是本项目里**较大改动**的计划载体：先写清楚「要什么、怎么证明做对了」，再动手实现。
-流程与格式由 [`skills/prd/SKILL.md`](../../skills/prd/SKILL.md) 规定，本页只讲**怎么用工具**——工具是 Rust 写的（`tools/xtask`），通过 `just prd ...` 调用。
+流程与格式由 `~/code/zata_code_template/skills/prd/` 中的权威 skill 规定；本仓库不保留副本。本页只讲**怎么用工具**——工具是 Rust 写的（`tools/xtask`），通过 `just prd ...` 调用。
 
 > 什么时候该写 PRD：新增一项业务能力、改动层间契约、改变对外接口、数据库结构变化——凡是「做错了代价高，或者需要人先确认方向」的事。
 > 改个文案、修个小 bug、调个配置，不用。想法还不成熟时先落 `tasks/inbox/`（见 [想法收集流程](idea-inbox.md)）。
@@ -90,7 +90,7 @@ just prd review <prd>                                      # 打开人工审查�
 |---|---|
 | 看板的 `FILES` 列（影响树触达进度）、按分支 worktree 副本优先读取进度 | 依赖大量 git worktree 与文件系统探测，收益小、复杂度高；看板读主仓库里的副本，以主线为准 |
 | `just ai implement`（AI 执行器 + 独立 verifier 的编排脚本）、证据密钥扫描脚本 | 绑定特定的 agent 命令行与提示词，不是通用底座；实现与验证仍按 skill 描述手动进行 |
-| 人审清单的交互 HTML 生成与结构质检脚本 | 呈现层；模板（`skills/prd/templates/human-review-checklist.html`）还在，由 agent 按 skill 手写 |
+| 人审清单的交互 HTML 生成与结构质检脚本 | 呈现层；模板随上游 `prd` skill 分发，由 agent 按 skill 手写 |
 
 另有四处有意的改进（在 Rust 版里）：
 

@@ -44,12 +44,14 @@ class CiFixture:
     nacos_port: int
     web_port: int
     admin_port: int
+    tracing_ui_port: int
     application_port: int
 
 
 @dataclass(frozen=True)
 class TestSecrets:
     postgres_password: str
+    agent_tracing_password: str
     redis_password: str
     admin_password: str
     nacos_token: str
@@ -194,6 +196,7 @@ def compose_environment(
             "COMPOSE_PROJECT_NAME": fixture.project_name,
             "COMPOSE_WEB_PORT": str(fixture.web_port),
             "COMPOSE_ADMIN_PORT": str(fixture.admin_port),
+            "COMPOSE_TRACING_UI_PORT": str(fixture.tracing_ui_port),
         }
     )
     environment.pop("COMPOSE_ACCOUNTS_PORT", None)
@@ -216,6 +219,8 @@ def properties_content(secrets_bundle: TestSecrets) -> str:
         (
             "# isolated CI values",
             f"POSTGRES_PASSWORD={secrets_bundle.postgres_password}",
+            f"AGENT_TRACING_DB_PASSWORD={secrets_bundle.agent_tracing_password}",
+            "AGENT_TRACING_PRODUCERS_JSON=[]",
             f"REDIS_PASSWORD={secrets_bundle.redis_password}",
             "ADMIN_BOOTSTRAP_USERNAME=ci-admin",
             f"ADMIN_BOOTSTRAP_PASSWORD={secrets_bundle.admin_password}",
@@ -223,6 +228,7 @@ def properties_content(secrets_bundle: TestSecrets) -> str:
             "TRUSTED_PROXY_CIDR=127.0.0.1",
             "WEB_PORT=3000",
             "ADMIN_PORT=8081",
+            "TRACING_UI_PORT=8082",
             "LOG_FORMAT=json",
             "",
         )
@@ -436,6 +442,7 @@ def cleanup(
 ) -> None:
     cleanup_environment = environment.copy()
     cleanup_environment["POSTGRES_PASSWORD"] = secrets_bundle.postgres_password
+    cleanup_environment["AGENT_TRACING_DB_PASSWORD"] = secrets_bundle.agent_tracing_password
     cleanup_environment["REDIS_PASSWORD"] = secrets_bundle.redis_password
     subprocess.run(
         [
@@ -471,7 +478,7 @@ def main() -> int:
 
     suffix = secrets.token_hex(4)
     project_name = f"tpl-ci-{suffix}"
-    nacos_port, web_port, admin_port, application_port = free_distinct_ports(4)
+    nacos_port, web_port, admin_port, tracing_ui_port, application_port = free_distinct_ports(5)
     namespace = "public"
     group = f"CI-{suffix.upper()}"
     location = NacosLocation(
@@ -488,10 +495,12 @@ def main() -> int:
         nacos_port=nacos_port,
         web_port=web_port,
         admin_port=admin_port,
+        tracing_ui_port=tracing_ui_port,
         application_port=application_port,
     )
     secrets_bundle = TestSecrets(
         postgres_password=f"pg-{secrets.token_hex(16)}",
+        agent_tracing_password=f"trace-{secrets.token_hex(16)}",
         redis_password=f"redis-{secrets.token_hex(16)}",
         admin_password=SPECIAL_ADMIN_PASSWORD,
         nacos_token=base64.b64encode(secrets.token_bytes(32)).decode("ascii"),
@@ -655,6 +664,7 @@ def main() -> int:
             print("== 启动隔离 Compose stack")
             redacted_values = (
                 secrets_bundle.postgres_password,
+                secrets_bundle.agent_tracing_password,
                 secrets_bundle.redis_password,
                 secrets_bundle.admin_password,
                 secrets_bundle.nacos_token,

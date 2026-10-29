@@ -79,7 +79,7 @@ inbox 里固定两类文件，职责严格分离：
 
 当某条想法值得动手时：
 
-1. 用 PRD skill 在 `tasks/pending/` 下创建正式 PRD（命名与结构见 `skills/prd/SKILL.md`，流程见 `docs/guides/prd-workflow.md`）。
+1. 用 `~/code/zata_code_template/skills/prd/` 中的 `prd` skill 在 `tasks/pending/` 下创建正式 PRD；本项目工具流程见 `docs/guides/prd-workflow.md`。
 2. 在 `summary.md` 的"已升级"区标注该想法对应的 PRD 路径。
 3. 原话条目保留在 `ideas.md` 不动，作为需求溯源。
 

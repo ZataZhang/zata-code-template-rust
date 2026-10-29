@@ -1,6 +1,7 @@
 target/
-frontend-public/
-frontend-admin/
+frontends/public/
+frontends/admin/
+frontends/tracing/
 .git/
 .env*
 !.env*.example

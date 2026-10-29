@@ -1,5 +1,5 @@
 /* 只读文件与改动查看器的样式。
-   设计令牌沿用仓库前端的主题基线（frontend-admin/src/styles/theme.css 的 :root）。 */
+   设计令牌沿用仓库前端的主题基线（frontends/admin/src/styles/theme.css 的 :root）。 */
 
 :root {
   --radius: 0.625rem;

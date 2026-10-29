@@ -406,7 +406,7 @@ pub fn prd_review(prd_argument: &str, print_only: bool) -> i32 {
             }
         }
         println!(
-            "   下一步：按 skills/prd/SKILL.md 生成 human-review-checklist.md（或证据报告）后再来。"
+            "   下一步：按已安装的 prd skill 生成 human-review-checklist.md（或证据报告）后再来。"
         );
         return 1;
     };

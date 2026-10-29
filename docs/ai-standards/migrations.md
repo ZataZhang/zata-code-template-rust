@@ -1,11 +1,11 @@
 # Database Migrations
 
-账号服务用 [`sqlx`](https://github.com/launchbadge/sqlx) 管理 PostgreSQL 迁移。迁移文件是**纯 SQL**，由该服务独占管理，放在 `services/accounts/migrations/`。将来新增业务服务时，各自维护自己的迁移目录和数据库，不得把 SQL 写进账号迁移中。
+各业务服务用 [`sqlx`](https://github.com/launchbadge/sqlx) 管理 PostgreSQL 迁移。迁移文件是**纯 SQL**，由所属服务独占管理：账号迁移放在 `services/accounts/migrations/`，Agent tracing 迁移放在 `services/agent-tracing/migrations/`。新增业务服务时，各自维护迁移目录和数据库，不得把 SQL 写进其他服务的迁移中。
 
 ## 基本约定
 
 - 文件名：`<14 位时间戳>_<简短描述>.sql`，例如 `20261016090000_create_users.sql`；时间戳决定执行顺序
-- 新增账号迁移用 `sqlx migrate add --source services/accounts/migrations <描述>`（需要安装 `sqlx-cli`：`cargo install sqlx-cli --no-default-features --features postgres`），不要手工编造时间戳
+- 新增账号迁移用 `sqlx migrate add --source services/accounts/migrations <描述>`；Agent tracing 使用 `--source services/agent-tracing/migrations`。需要安装 `sqlx-cli`：`cargo install sqlx-cli --no-default-features --features postgres`，不要手工编造时间戳
 - **已经应用到任何环境的迁移文件不要再修改**。sqlx 会记录每个迁移的校验和，改动后启动会报错；需要变更就新增一个迁移
 - 一个迁移只做一件事；破坏性变更（删列、改类型）要先确认数据如何处理，并在文件头注释里写清楚
 - 迁移里不要放业务数据的种子，种子数据由应用代码或单独脚本负责
@@ -23,9 +23,9 @@ COMMENT ON COLUMN users.email IS '登录邮箱，已规范化为小写，全局�
 
 ## 何时执行
 
-- **账号服务启动时自动执行**（`services/accounts/src/composition.rs` 调用 `persistence::run_migrations`），已应用的会被跳过，所以可以重复启动
+- **各服务启动时只执行自己的迁移**（accounts 与 agent-tracing 的 composition root 分别指定各自目录），已应用的会被跳过，所以可以重复启动
 - 配置了 `DATABASE_URL` 就要求启动时数据库可达；不可达则启动失败并以非 0 退出（快速失败，交给编排平台重启）
-- 迁移 SQL 在**编译期**嵌入账号服务二进制（`sqlx::migrate!`），部署时不需要带迁移目录；但**构建镜像时 `services/accounts/migrations/` 必须在构建上下文里**（见 `Dockerfile`）
+- 迁移 SQL 在**编译期**嵌入各服务二进制（`sqlx::migrate!`），部署时不需要带迁移目录；构建镜像时对应服务的迁移目录必须在构建上下文里（账号见根 `Dockerfile`，tracing 见 `services/agent-tracing/Dockerfile`）
 - `services/accounts/crates/infrastructure/build.rs` 监视 `services/accounts/migrations/`，改了 SQL 会触发重新编译
 
 ## 查询的写法
@@ -45,4 +45,4 @@ just db-up
 just test real
 ```
 
-真实数据库测试要自己清理数据，且不依赖库里已有的数据（见 `testing.md`）。涉及迁移的改动，至少验证：全新空库上能完整执行；在已执行过旧迁移的库上能增量执行；随后刷新 `.sqlx/` 并用离线模式编译。
+真实数据库验证要自己清理数据，且不依赖库里已有的数据（见 `testing.md`）。涉及迁移的改动，至少验证：全新空库上能完整执行；在已执行过旧迁移的库上能增量执行。只有使用 SQLx 查询宏的服务才需刷新对应离线元数据；Agent tracing 当前使用运行期查询，因此其 SQL 在数据库入口验证。

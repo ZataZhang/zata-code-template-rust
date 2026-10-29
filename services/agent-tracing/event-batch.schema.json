@@ -1,0 +1,788 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:rust-study:agent-tracing:event-batch:v1",
+  "title": "Agent Tracing Event Batch v1",
+  "description": "POST /api/v1/ingest/runs/{run_id}/events 的语言无关 JSON envelope。事件类型、payload 必填/可选字段均来自冻结目录；未知事件和 payload 字段均拒绝。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "events"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "events": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "items": {
+        "$ref": "#/$defs/event"
+      }
+    }
+  },
+  "$defs": {
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "seq",
+        "event_type",
+        "occurred_at",
+        "payload"
+      ],
+      "properties": {
+        "seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        },
+        "event_type": {
+          "type": "string",
+          "enum": [
+            "run.created",
+            "input.accepted",
+            "run.started",
+            "message.started",
+            "message.delta",
+            "message.completed",
+            "model.call.started",
+            "model.call.completed",
+            "model.call.failed",
+            "tool.call.started",
+            "tool.call.completed",
+            "tool.call.failed",
+            "delegation.started",
+            "delegation.completed",
+            "delegation.failed",
+            "delegation.cancelled",
+            "delegation.partial_completed",
+            "delegation.rejected",
+            "delegation.unavailable",
+            "delegation.lineage_admitted",
+            "delegation.lineage_rejected",
+            "routing.selected",
+            "routing.router_invoked",
+            "artifact.created",
+            "decision.gate.evaluated",
+            "run.cancelling",
+            "run.completed",
+            "run.failed",
+            "run.cancelled",
+            "run.interrupted"
+          ],
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z0-9][a-z0-9_.-]*$"
+        },
+        "occurred_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "trace_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "span_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{16}$"
+        },
+        "parent_span_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{16}$"
+        },
+        "payload": {
+          "type": "object"
+        }
+      },
+      "allOf": [
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "event_type": {
+                  "const": "run.created"
+                },
+                "payload": {
+                  "type": "object",
+                  "required": [
+                    "thread_id",
+                    "agent_id",
+                    "agent_snapshot_checksum",
+                    "context_pack_checksum"
+                  ],
+                  "properties": {
+                    "thread_id": {},
+                    "agent_id": {},
+                    "agent_snapshot_checksum": {},
+                    "context_pack_checksum": {}
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            {
+              "properties": {
+                "event_type": {
+                  "const": "input.accepted"
+                },
+                "payload": {
+                  "type": "object",
+                  "required": [
+                    "input_id",
+                    "content",
+                    "content_checksum",
+                    "resources"
+                  ],
+                  "properties": {
+                    "input_id": {},
+                    "content": {},
+                    "content_checksum": {},
+                    "resources": {}
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            {
+              "properties": {
+                "event_type": {
+                  "const": "run.started"
+                },
+                "payload": {
+                  "type": "object",
+                  "required": [
+                    "started_at"
+                  ],
+                  "properties": {
+                    "started_at": {}
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            {
+              "properties": {
+                "event_type": {
+                  "const": "message.started"
+                },
+                "payload": {
+                  "type": "object",
+                  "required": [
+                    "message_id",
+                    "role"
+                  ],
+                  "properties": {
+                    "message_id": {},
+                    "role": {}
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            {
+              "properties": {
+                "event_type": {
+                  "const": "message.delta"
+                },
+                "payload": {
+                  "type": "object",
+                  "required": [
+                    "message_id",
+                    "content_index",
+                    "delta"
+                  ],
+                  "properties": {
+                    "message_id": {},
+                    "content_index": {},
+                    "delta": {}
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            {
+              "properties": {
+                "event_type": {
+                  "const": "message.completed"
+                },
+                "payload": {
+                  "type": "object",
+                  "required": [
+                    "message_id",
+                    "content",
+                    "content_checksum"
+                  ],
+                  "properties": {
+                    "message_id": {},
+                    "content": {},
+                    "content_checksum": {}
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            {
+              "properties": {
+                "event_type": {
+                  "const": "model.call.started"
+                },
+                "payload": {
+                  "type": "object",
+                  "required": [
+                    "model_call_id",
+                    "model_name",
+                    "turn_index"
+                  ],
+                  "properties": {
+                    "model_call_id": {},
+                    "model_name": {},
+                    "turn_index": {}
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            {
+              "properties": {
+                "event_type": {
+                  "const": "model.call.completed"
+                },
+                "payload": {
+                  "type": "object",
+                  "required": [
+                    "model_call_id",
+                    "model_name",
+                    "turn_index",
+                    "usage",
+                    "finish_reason"
+                  ],
+                  "properties": {
+                    "model_call_id": {},
+                    "model_name": {},
+                    "turn_index": {},
+                    "usage": {},
+                    "finish_reason": {}
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            {
+              "properties": {
+                "event_type": {
+                  "const": "model.call.failed"
+                },
+                "payload": {
+                  "type": "object",
+                  "required": [
+                    "model_call_id",
+                    "model_name",
+                    "turn_index",
+                    "error"
+                  ],
+                  "properties": {
+                    "model_call_id": {},
+                    "model_name": {},
+                    "turn_index": {},
+                    "error": {}
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            {
+              "properties": {
+                "event_type": {
+                  "const": "tool.call.started"
+                },
+                "payload": {
+                  "type": "object",
+                  "required": [
+                    "tool_call_id",
+                    "tool_name",
+                    "arguments"
+                  ],
+                  "properties": {
+                    "tool_call_id": {},
+                    "tool_name": {},
+                    "arguments": {},
+                    "parent_model_call_id": {}
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            {
+              "properties": {
+                "event_type": {
+                  "const": "tool.call.completed"
+                },
+                "payload": {
+                  "type": "object",
+                  "required": [
+                    "tool_call_id",
+                    "result",
+                    "result_checksum"
+                  ],
+                  "properties": {
+                    "tool_call_id": {},
+                    "result": {},
+                    "result_checksum": {}
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            {
+              "properties": {
+                "event_type": {
+                  "const": "tool.call.failed"
+                },
+                "payload": {
+                  "type": "object",
+                  "required": [
+                    "tool_call_id",
+                    "error"
+                  ],
+                  "properties": {
+                    "tool_call_id": {},
+                    "error": {}
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            {
+              "properties": {
+                "event_type": {
+                  "const": "delegation.started"
+                },
+                "payload": {
+                  "type": "object",
+                  "required": [
+                    "delegation_id",
+                    "child_run_id",
+                    "child_agent_id",
+                    "child_agent_snapshot_checksum",
+                    "child_context_pack_checksum",
+                    "budget_limit",
+                    "failure_policy",
+                    "origin"
+                  ],
+                  "properties": {
+                    "delegation_id": {},
+                    "child_run_id": {},
+                    "child_agent_id": {},
+                    "child_agent_snapshot_checksum": {},
+                    "child_context_pack_checksum": {},
+                    "budget_limit": {},
+                    "failure_policy": {},
+                    "origin": {}
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            {
+              "properties": {
+                "event_type": {
+                  "const": "delegation.completed"
+                },
+                "payload": {
+                  "type": "object",
+                  "required": [
+                    "delegation_id",
+                    "child_run_id",
+                    "status",
+                    "result_checksum",
+                    "failure_policy"
+                  ],
+                  "properties": {
+                    "delegation_id": {},
+                    "child_run_id": {},
+                    "status": {},
+                    "result_checksum": {},
+                    "failure_policy": {}
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            {
+              "properties": {
+                "event_type": {
+                  "const": "delegation.failed"
+                },
+                "payload": {
+                  "type": "object",
+                  "required": [
+                    "delegation_id",
+                    "child_run_id",
+                    "error_code",
+                    "failure_policy"
+                  ],
+                  "properties": {
+                    "delegation_id": {},
+                    "child_run_id": {},
+                    "error_code": {},
+                    "failure_policy": {}
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            {
+              "properties": {
+                "event_type": {
+                  "const": "delegation.cancelled"
+                },
+                "payload": {
+                  "type": "object",
+                  "required": [
+                    "delegation_id",
+                    "child_run_id",
+                    "failure_policy"
+                  ],
+                  "properties": {
+                    "delegation_id": {},
+                    "child_run_id": {},
+                    "failure_policy": {}
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            {
+              "properties": {
+                "event_type": {
+                  "const": "delegation.partial_completed"
+                },
+                "payload": {
+                  "type": "object",
+                  "required": [
+                    "delegation_id",
+                    "child_run_id",
+                    "failure_policy",
+                    "missing_child_run_ids",
+                    "completed_child_run_ids"
+                  ],
+                  "properties": {
+                    "delegation_id": {},
+                    "child_run_id": {},
+                    "failure_policy": {},
+                    "missing_child_run_ids": {},
+                    "completed_child_run_ids": {}
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            {
+              "properties": {
+                "event_type": {
+                  "const": "delegation.rejected"
+                },
+                "payload": {
+                  "type": "object",
+                  "required": [
+                    "reason_code",
+                    "tool_call_id_hash"
+                  ],
+                  "properties": {
+                    "reason_code": {},
+                    "tool_call_id_hash": {}
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            {
+              "properties": {
+                "event_type": {
+                  "const": "delegation.unavailable"
+                },
+                "payload": {
+                  "type": "object",
+                  "required": [
+                    "reason_code",
+                    "tool_call_id_hash"
+                  ],
+                  "properties": {
+                    "reason_code": {},
+                    "tool_call_id_hash": {}
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            {
+              "properties": {
+                "event_type": {
+                  "const": "delegation.lineage_admitted"
+                },
+                "payload": {
+                  "type": "object",
+                  "required": [
+                    "delegation_id",
+                    "child_run_id",
+                    "child_agent_id",
+                    "external_child_id_hash"
+                  ],
+                  "properties": {
+                    "delegation_id": {},
+                    "child_run_id": {},
+                    "child_agent_id": {},
+                    "external_child_id_hash": {}
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            {
+              "properties": {
+                "event_type": {
+                  "const": "delegation.lineage_rejected"
+                },
+                "payload": {
+                  "type": "object",
+                  "required": [
+                    "reason_code",
+                    "external_child_id_hash"
+                  ],
+                  "properties": {
+                    "reason_code": {},
+                    "external_child_id_hash": {}
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            {
+              "properties": {
+                "event_type": {
+                  "const": "routing.selected"
+                },
+                "payload": {
+                  "type": "object",
+                  "required": [
+                    "entry_source",
+                    "entry_agent_id",
+                    "candidate_agent_ids",
+                    "selected_agent_id",
+                    "reason_code",
+                    "policy_checksum",
+                    "capability_checksum"
+                  ],
+                  "properties": {
+                    "entry_source": {},
+                    "entry_agent_id": {},
+                    "candidate_agent_ids": {},
+                    "selected_agent_id": {},
+                    "reason_code": {},
+                    "policy_checksum": {},
+                    "capability_checksum": {}
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            {
+              "properties": {
+                "event_type": {
+                  "const": "routing.router_invoked"
+                },
+                "payload": {
+                  "type": "object",
+                  "required": [
+                    "model_call_id",
+                    "model_name",
+                    "usage",
+                    "usage_kind",
+                    "candidate_count"
+                  ],
+                  "properties": {
+                    "model_call_id": {},
+                    "model_name": {},
+                    "usage": {},
+                    "usage_kind": {},
+                    "candidate_count": {}
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            {
+              "properties": {
+                "event_type": {
+                  "const": "artifact.created"
+                },
+                "payload": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "artifact_id",
+                    "filename",
+                    "content_type",
+                    "size",
+                    "checksum"
+                  ],
+                  "properties": {
+                    "type": {},
+                    "artifact_id": {},
+                    "filename": {},
+                    "content_type": {},
+                    "size": {},
+                    "checksum": {},
+                    "sync_action": {}
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            {
+              "properties": {
+                "event_type": {
+                  "const": "decision.gate.evaluated"
+                },
+                "payload": {
+                  "type": "object",
+                  "required": [
+                    "decision_id",
+                    "gate",
+                    "tool_name",
+                    "tool_call_ref",
+                    "verdict",
+                    "answer",
+                    "probability",
+                    "probabilities",
+                    "irreversible",
+                    "fail_open",
+                    "policy_fingerprint",
+                    "elapsed_ms",
+                    "judgement_state"
+                  ],
+                  "properties": {
+                    "decision_id": {},
+                    "gate": {},
+                    "tool_name": {},
+                    "tool_call_ref": {},
+                    "verdict": {},
+                    "answer": {},
+                    "probability": {},
+                    "probabilities": {},
+                    "irreversible": {},
+                    "fail_open": {},
+                    "policy_fingerprint": {},
+                    "elapsed_ms": {},
+                    "judgement_state": {}
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            {
+              "properties": {
+                "event_type": {
+                  "const": "run.cancelling"
+                },
+                "payload": {
+                  "type": "object",
+                  "required": [
+                    "requested_by",
+                    "requested_at"
+                  ],
+                  "properties": {
+                    "requested_by": {},
+                    "requested_at": {}
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            {
+              "properties": {
+                "event_type": {
+                  "const": "run.completed"
+                },
+                "payload": {
+                  "type": "object",
+                  "required": [
+                    "message_id"
+                  ],
+                  "properties": {
+                    "message_id": {}
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            {
+              "properties": {
+                "event_type": {
+                  "const": "run.failed"
+                },
+                "payload": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {}
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            {
+              "properties": {
+                "event_type": {
+                  "const": "run.cancelled"
+                },
+                "payload": {
+                  "type": "object",
+                  "required": [
+                    "external_stop_confirmed"
+                  ],
+                  "properties": {
+                    "external_stop_confirmed": {}
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            {
+              "properties": {
+                "event_type": {
+                  "const": "run.interrupted"
+                },
+                "payload": {
+                  "type": "object",
+                  "required": [
+                    "reason_code",
+                    "lease_expired_at"
+                  ],
+                  "properties": {
+                    "reason_code": {},
+                    "lease_expired_at": {}
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

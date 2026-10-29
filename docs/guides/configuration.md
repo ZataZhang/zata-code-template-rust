@@ -11,6 +11,26 @@
 
 完整的带注释示例见仓库根的 [`config.toml`](../../config.toml) 与 [`.env.example`](../../.env.example)。
 
+## Agent tracing 服务
+
+第二个后端服务从 [`services/agent-tracing/config.toml`](../../services/agent-tracing/config.toml) 读取默认配置，独立于账号服务数据库与配置。密钥变量只在 tracing 进程或部署平台中注入：
+
+| 配置 | 默认 | 说明 |
+|---|---|---|
+| `APP_DATABASE__URL` | 未配置 | 必须提供 tracing 专属 PostgreSQL 连接串；服务启动时执行 `services/agent-tracing/migrations/` |
+| `APP_ACCOUNTS__ADMIN_AUTH_URL` | `http://accounts:8080/admin/auth/me` | tracing API 校验管理员 Cookie 的公开 accounts 接口；独立部署时改为可访问的 accounts URL |
+| `APP_PRODUCER__CREDENTIALS_JSON` | `[]` | producer JSON 数组；每项含 `source_id`、`project_id`、`token`。token 至少 32 字符，明文只存在启动配置，不进入数据库或日志 |
+| `APP_OTLP__TRACES_ENDPOINT` | 未配置 | 完整 OTLP/HTTP traces URL；默认完全关闭外部导出 |
+| `APP_SERVER__HOST` / `APP_SERVER__PORT` | `127.0.0.1` / `8090` | 独立运行监听地址；容器镜像绑定 `0.0.0.0:8090` |
+
+producer 凭据 JSON 示例：
+
+```json
+[{"source_id":"support-platform","project_id":"production","token":"使用至少32字符的URL-safe随机值"}]
+```
+
+JSON 不要写入服务 TOML 或提交到仓库。完整事件、错误码与续传规则见 [`services/agent-tracing/README.md`](../../services/agent-tracing/README.md)。
+
 ## 后端
 
 | 配置 | 默认 | 说明 |
@@ -53,17 +73,19 @@
 
 Compose 使用与应用 TOML 相同的 Nacos server 与认证参数，但通过 `[nacos].compose_data_id` 读取独立 Data ID。`[nacos]` 的 namespace/group 与两类 Data ID 都留在项目配置文件中；`.env.local` 只存 Nacos server 地址与认证凭据，不存 PostgreSQL、Redis 或管理员密码。Nacos 不可达、认证失败、配置不存在或内容无效时，入口会在运行 Docker 前停止，不会改用本地文件。
 
-配置文件只接受受限的字面量 `KEY=value` 行：允许空行与 `#` / `!` 注释；不执行 shell、变量插值或引号转义；拒绝未知/重复键、控制字符和类型不正确的值。必填键为 `POSTGRES_PASSWORD`、`REDIS_PASSWORD`；引导管理员凭据可选。端口必须在 1–65535，`COOKIE_SECURE` 仅接受 `true`/`false`，`LOG_FORMAT` 仅接受 `text`/`json`，`TRUSTED_PROXY_CIDR` 仅接受 IP 地址或 CIDR。
+配置文件只接受受限的字面量 `KEY=value` 行：允许空行与 `#` / `!` 注释；不执行 shell、变量插值或引号转义；拒绝未知/重复键、控制字符和类型不正确的值。必填键为 `POSTGRES_PASSWORD`、`REDIS_PASSWORD`、`AGENT_TRACING_DB_PASSWORD`；引导管理员凭据可选，producer 清单默认 `[]`。端口必须在 1–65535，`COOKIE_SECURE` 仅接受 `true`/`false`，`LOG_FORMAT` 仅接受 `text`/`json`，`TRUSTED_PROXY_CIDR` 仅接受 IP 地址或 CIDR。
 
 示例结构见 [`deploy/nacos/rust-study-compose.properties.example`](../../deploy/nacos/rust-study-compose.properties.example)；把内容作为 Nacos 配置发布，不要复制为本地部署环境文件。完整 stack 中 accounts 不发布端口，前面有覆盖写代理头的 nginx，因此固定启用 `trust_forwarded_for=true`；独立开发使用 `docker-compose.accounts.yml`，仅绑定回环地址并关闭该信任。
 
 | 变量 | 说明 |
 |---|---|
 | `POSTGRES_PASSWORD`、`REDIS_PASSWORD` | 必填，缺失时 compose 报错 |
+| `AGENT_TRACING_DB_PASSWORD` | tracing 专属 PostgreSQL 密码；与 accounts 数据库密码分开管理。该值直接用于 PostgreSQL URL，使用 URL-safe 随机字符 |
+| `AGENT_TRACING_PRODUCERS_JSON` | producer source/project/token 清单；没有 producer 时为空数组 `[]` |
 | `ADMIN_BOOTSTRAP_USERNAME`、`ADMIN_BOOTSTRAP_PASSWORD` | 引导管理员 |
 | `COOKIE_SECURE` | HTTPS 访问时必须 `true` |
 | `TRUSTED_PROXY_CIDR` | 前面有 HTTPS 终止代理时填它的地址段，默认只认直接对端 |
-| `WEB_PORT`、`ADMIN_PORT` | 宿主机端口，默认 3000 / 8081 |
+| `WEB_PORT`、`ADMIN_PORT`、`TRACING_UI_PORT` | 宿主机端口，默认 3000 / 8081 / 8082 |
 | `LOG_FORMAT` | `json`（默认）或 `text` |
 
 应用 Nacos 配置使用 TOML，例如 `[database]` 下的 `url` 和 `[redis]` 下的 `url`；Compose Nacos 配置使用 Properties。两类配置共享 `[nacos]` 中的 namespace/group 和 `.env.local` 中的 server/认证参数，但读取不同 Data ID。Nacos 用户名/密码或令牌只放在 `.env.local` 或部署平台的密钥管理中，不要写进远端业务配置。
@@ -72,3 +94,4 @@ Compose 使用与应用 TOML 相同的 Nacos server 与认证参数，但通过 
 
 - 前台（Next.js）：后端地址是**构建参数** `BACKEND_URL`（构建时固化）；本机开发用环境变量 `BACKEND_URL`，默认 `http://localhost:8080`。
 - 管理后台（Vite）：开发时 `BACKEND_PORT`（默认 8080）、`FRONTEND_ADMIN_PORT`（默认 5173）；镜像运行时用 `BACKEND_UPSTREAM`、`TRUSTED_PROXY_CIDR`。
+- Tracing Studio（Vite）：开发时 `AGENT_TRACING_PORT`（默认 8090）、`ACCOUNTS_PORT`（默认 8080）、`FRONTEND_TRACING_PORT`（默认 5174）；生产 nginx 把 producer `/api/v1/ingest/*` 原样转给 tracing，把管理员认证转给 accounts，把管理查询代理到 tracing。

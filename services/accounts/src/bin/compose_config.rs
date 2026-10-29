@@ -42,6 +42,7 @@ const RUNTIME_ENVIRONMENT_KEYS: &[&str] = &[
 const HOST_PORT_OVERRIDES: &[(&str, &str)] = &[
     ("COMPOSE_WEB_PORT", "WEB_PORT"),
     ("COMPOSE_ADMIN_PORT", "ADMIN_PORT"),
+    ("COMPOSE_TRACING_UI_PORT", "TRACING_UI_PORT"),
     ("COMPOSE_ACCOUNTS_PORT", "ACCOUNTS_PORT"),
 ];
 
@@ -292,7 +293,7 @@ fn apply_host_port_overrides(child_environment: &mut BTreeMap<String, OsString>)
 }
 
 fn validate_compose_ports(child_environment: &BTreeMap<String, OsString>) -> Result<()> {
-    for port_name in ["WEB_PORT", "ADMIN_PORT", "ACCOUNTS_PORT"] {
+    for port_name in ["WEB_PORT", "ADMIN_PORT", "TRACING_UI_PORT", "ACCOUNTS_PORT"] {
         let Some(port_value) = child_environment.get(port_name) else {
             continue;
         };
@@ -310,7 +311,7 @@ fn validate_compose_ports(child_environment: &BTreeMap<String, OsString>) -> Res
 }
 
 fn report_safe_settings(project_name: &str, child_environment: &BTreeMap<String, OsString>) {
-    let port_summary = ["WEB_PORT", "ADMIN_PORT", "ACCOUNTS_PORT"]
+    let port_summary = ["WEB_PORT", "ADMIN_PORT", "TRACING_UI_PORT", "ACCOUNTS_PORT"]
         .into_iter()
         .filter_map(|key| {
             child_environment

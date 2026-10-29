@@ -6,6 +6,12 @@
 POSTGRES_PASSWORD=
 REDIS_PASSWORD=
 
+# tracing 独立 PostgreSQL 密码（必填；URL-safe 随机字符；不要与 accounts 数据库复用）。
+AGENT_TRACING_DB_PASSWORD=
+
+# 可登记多个 producer；token 使用至少 32 字符的随机值。没有接入 producer 时留空数组。
+AGENT_TRACING_PRODUCERS_JSON=[]
+
 # 引导管理员（不填则没有任何管理员能登录后台）。已存在则不改动，所以事后改这里不会改密码。
 ADMIN_BOOTSTRAP_USERNAME=admin
 ADMIN_BOOTSTRAP_PASSWORD=
@@ -20,6 +26,7 @@ TRUSTED_PROXY_CIDR=127.0.0.1
 # 宿主机上暴露的端口；COMPOSE_WEB_PORT/COMPOSE_ADMIN_PORT/COMPOSE_ACCOUNTS_PORT 可仅在隔离测试时覆盖。
 WEB_PORT=3000
 ADMIN_PORT=8081
+TRACING_UI_PORT=8082
 
 # 日志格式：json（日志采集）或 text（本机阅读）。
 LOG_FORMAT=json

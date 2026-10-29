@@ -8,13 +8,13 @@
 
 ## 当前服务边界
 
-`services/accounts/` 是当前唯一业务服务和 composition root（Cargo package `tpl-accounts`，二进制 `accounts-service`）。`services/accounts/crates/*` 是账号服务私有层，不是供其他业务模块依赖的通用库。后续业务模块若需独立数据和部署，应有自己的服务入口、接口与迁移，不依赖账号服务的领域/存储 crate。
+`services/accounts/` 与 `services/agent-tracing/` 是当前两个业务服务与 composition root（分别为 `accounts-service` 与 `agent-tracing-service`）。两个服务拥有独立配置、迁移、数据库与 Docker 镜像。`services/accounts/crates/*` 和 `services/agent-tracing/crates/*` 都是各自私有层，不是供其他业务模块依赖的通用库；tracing 通过 accounts 的公开管理员认证 HTTP 接口校验 Cookie，不访问 accounts 数据库或 Redis。
 
 ## 新服务目录约定
 
 后续服务将装配根、私有 package、迁移和默认配置集中放在 `services/<service>/`，私有 package 放在该目录的 `crates/` 下，使用业务前缀命名。新增时显式登记 workspace 成员，不依赖账号私有 `crates/*`。账号服务的私有 package 已集中迁入 `services/accounts/crates/`。
 
-目录模板、数据与事务边界、服务间通信、身份和独立发布要求见 [系统设计：微服务结构设计](../architecture/system-design.md#微服务结构设计)。该节描述后续新增服务的设计约定；当前仍只有一个账号业务服务，不要求提前创建空服务。
+目录模板、数据与事务边界、服务间通信、身份和独立发布要求见 [系统设计：微服务结构设计](../architecture/system-design.md#微服务结构设计)。后续新增服务沿用该约定；已有 tracing 子服务和独立前端是具体实现示例。
 
 ## 账号服务内部层
 
@@ -33,7 +33,7 @@
 **依赖向内：外层可以依赖 `tpl-core`，`tpl-core` 不能依赖任何外层。** 依赖关系写在各 crate 的 `Cargo.toml` 里，有两道防线：
 
 1. **Cargo**：没声明的依赖就 `use` 不了；
-2. **守卫测试** `services/accounts/tests/architecture.rs`：读取 `cargo metadata`，断言账号服务私有层的依赖都符合允许名单。只靠第 1 道不够——有人把违规依赖写进 `Cargo.toml`，照样能编译通过。
+2. **守卫测试** `services/accounts/tests/architecture.rs`：读取 `cargo metadata`，按服务名区分所有业务服务的私有层，断言依赖符合允许名单，并拒绝跨服务 crate 依赖。只靠第 1 道不够——有人把违规依赖写进 `Cargo.toml`，照样能编译通过。
 
 因此不需要 Python 版那种逐文件扫描 import 的脚本，但这一个测试要保留。它失败时修 `Cargo.toml`，不要改测试；只有约定本身变更时才改它的名单，并同步更新本页。新增 crate 时必须同时登记到名单里，否则测试会失败。
 
@@ -43,6 +43,11 @@ tpl-engines        → tpl-core
 tpl-infrastructure → tpl-core
 tpl-core           → （无）
 tpl-accounts       → 以上全部（账号服务唯一允许依赖全部各层的地方）
+
+tpl-agent-tracing-core            → （无）
+tpl-agent-tracing-api             → tpl-agent-tracing-core
+tpl-agent-tracing-infrastructure  → tpl-agent-tracing-core
+tpl-agent-tracing                 → 自己的各层（唯一装配根）
 ```
 
 允许与禁止：
@@ -53,6 +58,7 @@ tpl-accounts       → 以上全部（账号服务唯一允许依赖全部各层
 - `tpl-engines` 不得依赖 `tpl-api`；需要基础设施能力时，通过 core 的端口，由 `tpl-accounts` 注入
 - 跨层协作一律经由 `tpl-core` 里的端口（trait）
 - 未来业务服务不得依赖 `tpl-api` / `tpl-core` / `tpl-infrastructure` 等账号私有 crate；跨业务复用须提取与账号域无关的契约或平台 crate
+- 各服务只能依赖自身带服务前缀的私有层；例如 tracing 只依赖 `tpl-agent-tracing-*`，账号与 tracing 之间只走公开 HTTP 契约
 
 > 与 Python 版模板的差异：Python 版规则写着「infrastructure 不得导入 core」，靠的是 Python 的结构化类型（Protocol 鸭子类型）让基础设施不 import 就能满足 core 的接口。Rust 的 trait 必须显式 `impl`，实现方必须依赖定义 trait 的 crate，所以这里采用标准的 Clean Architecture 方向：所有外层依赖 core。
 
@@ -90,11 +96,12 @@ tpl-accounts       → 以上全部（账号服务唯一允许依赖全部各层
 
 | 前端 | 目录 | 技术栈 | 状态 |
 |---|---|---|---|
-| 前台站点 | `frontend-public/` | Next.js 16 + React 19 + Tailwind 4，pnpm | 已迁移：营销页、注册、登录、受保护区域 |
+| 前台站点 | `frontends/public/` | Next.js 16 + React 19 + Tailwind 4，pnpm | 已迁移：营销页、注册、登录、受保护区域 |
 | 账号 UI 包 | `packages/accounts-ui/` | React 19、TypeScript、pnpm | 提供可复用的普通用户注册/登录组件与 HTTP 客户端；宿主配置同源 API base 和文案 |
 | 第二宿主示例 | `examples/accounts-host/` | Vite + React | 独立应用，依赖打包后的 `@tpl/accounts-ui` tarball，用于验证模块可以跨应用安装和构建 |
-| 管理后台 | `frontend-admin/` | Vite + React | 已迁移：管理员登录、用户搜索与启停；保持 `/admin/*` 独立认证域，不复用普通用户账号 UI |
+| 管理后台 | `frontends/admin/` | Vite + React | 已迁移：管理员登录、用户搜索与启停；保持 `/admin/*` 独立认证域，不复用普通用户账号 UI |
+| Agent tracing 前端 | `frontends/tracing/` | Vite + React | 独立子服务；通过同源 HTTP 代理访问 accounts 管理员登录与 agent-tracing 轨迹 API |
 
-前端有自己的规范，见 `frontend-public/README.md`（接口契约、部署注意事项）和 `frontend-public/AGENTS.md`（Next.js 版本有破坏性变更，写代码前先读 `node_modules/next/dist/docs/`）。
+前端有自己的规范，见 `frontends/public/README.md`（接口契约、部署注意事项）和 `frontends/public/AGENTS.md`（Next.js 版本有破坏性变更，写代码前先读 `node_modules/next/dist/docs/`）。
 
 任何带用户可见界面的功能，PRD 与实现都要把对应前端当作一等公民规划；纯后端任务需显式声明 `No frontend impact`，而不是默默省略前端。

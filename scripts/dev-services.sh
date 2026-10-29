@@ -11,6 +11,8 @@ backend_pid=""
 frontend_public_pid=""
 frontend_admin_pid=""
 accounts_host_pid=""
+tracing_backend_pid=""
+frontend_tracing_pid=""
 run_target=""
 
 read_local_port_setting() {
@@ -42,6 +44,8 @@ backend_port="${configured_backend_port:-8080}"
 frontend_public_port="${FRONTEND_PUBLIC_PORT:-3000}"
 frontend_admin_port="${FRONTEND_ADMIN_PORT:-5173}"
 accounts_host_port="${ACCOUNTS_HOST_PORT:-4174}"
+tracing_backend_port="${AGENT_TRACING_PORT:-8090}"
+frontend_tracing_port="${FRONTEND_TRACING_PORT:-5174}"
 
 write_run_state() {
     local temporary_state_file="$run_state_file.$$"
@@ -54,10 +58,14 @@ write_run_state() {
         printf "FRONTEND_PUBLIC_PID='%s'\n" "$frontend_public_pid"
         printf "FRONTEND_ADMIN_PID='%s'\n" "$frontend_admin_pid"
         printf "ACCOUNTS_HOST_PID='%s'\n" "$accounts_host_pid"
+        printf "TRACING_BACKEND_PID='%s'\n" "$tracing_backend_pid"
+        printf "FRONTEND_TRACING_PID='%s'\n" "$frontend_tracing_pid"
         printf "BACKEND_PORT='%s'\n" "$backend_port"
         printf "FRONTEND_PUBLIC_PORT='%s'\n" "$frontend_public_port"
         printf "FRONTEND_ADMIN_PORT='%s'\n" "$frontend_admin_port"
         printf "ACCOUNTS_HOST_PORT='%s'\n" "$accounts_host_port"
+        printf "TRACING_BACKEND_PORT='%s'\n" "$tracing_backend_port"
+        printf "FRONTEND_TRACING_PORT='%s'\n" "$frontend_tracing_port"
     } > "$temporary_state_file"
     chmod 600 "$temporary_state_file"
     mv "$temporary_state_file" "$run_state_file"
@@ -97,11 +105,15 @@ cleanup_run() {
     signal_process_group "$frontend_public_pid" TERM
     signal_process_group "$frontend_admin_pid" TERM
     signal_process_group "$accounts_host_pid" TERM
+    signal_process_group "$tracing_backend_pid" TERM
+    signal_process_group "$frontend_tracing_pid" TERM
     sleep 0.5
     signal_process_group "$backend_pid" KILL
     signal_process_group "$frontend_public_pid" KILL
     signal_process_group "$frontend_admin_pid" KILL
     signal_process_group "$accounts_host_pid" KILL
+    signal_process_group "$tracing_backend_pid" KILL
+    signal_process_group "$frontend_tracing_pid" KILL
     wait 2>/dev/null || true
     remove_run_state
 
@@ -208,6 +220,7 @@ prepare_dependencies() {
             require_frontend_tools
             run_just_recipe web-install
             run_just_recipe web-admin-install
+            run_just_recipe web-tracing-install
             (cd "$repo_root/examples/accounts-host" && CI=true pnpm install --frozen-lockfile --prefer-offline)
             ;;
         frontend|frontend-admin)
@@ -223,11 +236,21 @@ prepare_dependencies() {
             run_just_recipe accounts-ui-build
             (cd "$repo_root/examples/accounts-host" && CI=true pnpm install --frozen-lockfile --prefer-offline)
             ;;
+        tracing)
+            require_frontend_tools
+            run_just_recipe web-tracing-install
+            ;;
+        frontend-tracing)
+            require_frontend_tools
+            run_just_recipe web-tracing-install
+            ;;
+        tracing-backend)
+            ;;
         backend)
             ;;
         *)
             echo "ERROR: Unknown local run target: $run_target" >&2
-            echo "Usage: just run [all|backend|frontend|frontend-public|accounts-host|docker]" >&2
+            echo "Usage: just run [all|backend|frontend|frontend-public|accounts-host|tracing|tracing-backend|frontend-tracing|docker]" >&2
             exit 2
             ;;
     esac
@@ -238,6 +261,8 @@ select_services() {
     start_frontend_public="false"
     start_frontend_admin="false"
     start_accounts_host="false"
+    start_tracing_backend="false"
+    start_frontend_tracing="false"
 
     case "$run_target" in
         all)
@@ -245,6 +270,8 @@ select_services() {
             start_frontend_public="true"
             start_frontend_admin="true"
             start_accounts_host="true"
+            start_tracing_backend="true"
+            start_frontend_tracing="true"
             ;;
         backend)
             start_backend="true"
@@ -258,11 +285,21 @@ select_services() {
         accounts-host)
             start_accounts_host="true"
             ;;
+        tracing)
+            start_tracing_backend="true"
+            start_frontend_tracing="true"
+            ;;
+        tracing-backend)
+            start_tracing_backend="true"
+            ;;
+        frontend-tracing)
+            start_frontend_tracing="true"
+            ;;
         docker)
             ;;
         *)
             echo "ERROR: Unknown local run target: $run_target" >&2
-            echo "Usage: just run [all|backend|frontend|frontend-public|accounts-host|docker]" >&2
+            echo "Usage: just run [all|backend|frontend|frontend-public|accounts-host|tracing|tracing-backend|frontend-tracing|docker]" >&2
             exit 2
             ;;
     esac
@@ -290,6 +327,14 @@ check_selected_ports() {
         validate_port "Accounts UI host" "$accounts_host_port"
         check_port_available "Accounts UI host" "$accounts_host_port"
     fi
+    if [ "$start_tracing_backend" = "true" ]; then
+        validate_port "Agent tracing API" "$tracing_backend_port"
+        check_port_available "Agent tracing API" "$tracing_backend_port"
+    fi
+    if [ "$start_frontend_tracing" = "true" ]; then
+        validate_port "Tracing frontend" "$frontend_tracing_port"
+        check_port_available "Tracing frontend" "$frontend_tracing_port"
+    fi
 }
 
 print_service_urls() {
@@ -309,6 +354,12 @@ print_service_urls() {
         fi
         echo "  Accounts UI example:     http://127.0.0.1:$accounts_host_port"
     fi
+    if [ "$start_tracing_backend" = "true" ]; then
+        echo "  Agent tracing readiness: http://127.0.0.1:$tracing_backend_port/ready"
+    fi
+    if [ "$start_frontend_tracing" = "true" ]; then
+        echo "  Trace Studio:            http://127.0.0.1:$frontend_tracing_port"
+    fi
     echo "Stop these processes with: just down"
 }
 
@@ -326,7 +377,7 @@ start_backend() {
 start_public_frontend() {
     echo "Starting public Next.js frontend on 127.0.0.1:$frontend_public_port"
     (
-        cd "$repo_root/frontend-public"
+        cd "$repo_root/frontends/public"
         export PORT="$frontend_public_port"
         export BACKEND_URL="http://127.0.0.1:$backend_port"
         exec pnpm dev
@@ -338,7 +389,7 @@ start_public_frontend() {
 start_admin_frontend() {
     echo "Starting admin Vite frontend on 127.0.0.1:$frontend_admin_port"
     (
-        cd "$repo_root/frontend-admin"
+        cd "$repo_root/frontends/admin"
         export BACKEND_PORT="$backend_port"
         export FRONTEND_ADMIN_PORT="$frontend_admin_port"
         exec pnpm dev
@@ -359,12 +410,40 @@ start_accounts_host() {
     write_run_state
 }
 
+start_tracing_backend() {
+    local database_url="${AGENT_TRACING_DATABASE_URL:-postgres://agent_tracing:tracepass@localhost:5434/agent_tracing_dev}"
+    echo "Starting Rust agent-tracing service on 127.0.0.1:$tracing_backend_port"
+    (
+        cd "$repo_root"
+        export APP_SERVER__HOST=127.0.0.1
+        export APP_SERVER__PORT="$tracing_backend_port"
+        export APP_DATABASE__URL="$database_url"
+        export APP_ACCOUNTS__ADMIN_AUTH_URL="http://127.0.0.1:$backend_port/admin/auth/me"
+        exec cargo run -p tpl-agent-tracing --bin agent-tracing-service
+    ) &
+    tracing_backend_pid=$!
+    write_run_state
+}
+
+start_tracing_frontend() {
+    echo "Starting Trace Studio Vite frontend on 127.0.0.1:$frontend_tracing_port"
+    (
+        cd "$repo_root/frontends/tracing"
+        export FRONTEND_TRACING_PORT="$frontend_tracing_port"
+        export AGENT_TRACING_PORT="$tracing_backend_port"
+        export ACCOUNTS_PORT="$backend_port"
+        exec pnpm dev
+    ) &
+    frontend_tracing_pid=$!
+    write_run_state
+}
+
 wait_for_process_exit() {
     local process_pid=""
     local process_status=0
 
     while true; do
-        for process_pid in "$backend_pid" "$frontend_public_pid" "$frontend_admin_pid" "$accounts_host_pid"; do
+        for process_pid in "$backend_pid" "$frontend_public_pid" "$frontend_admin_pid" "$accounts_host_pid" "$tracing_backend_pid" "$frontend_tracing_pid"; do
             [ -n "$process_pid" ] || continue
             if ! kill -0 "$process_pid" 2>/dev/null; then
                 if wait "$process_pid"; then
@@ -416,6 +495,12 @@ run_local_services() {
     fi
     if [ "$start_accounts_host" = "true" ]; then
         start_accounts_host
+    fi
+    if [ "$start_tracing_backend" = "true" ]; then
+        start_tracing_backend
+    fi
+    if [ "$start_frontend_tracing" = "true" ]; then
+        start_tracing_frontend
     fi
 
     wait_for_process_exit
@@ -478,11 +563,15 @@ stop_local_services() {
         signal_process_group "${FRONTEND_PUBLIC_PID:-}" TERM
         signal_process_group "${FRONTEND_ADMIN_PID:-}" TERM
         signal_process_group "${ACCOUNTS_HOST_PID:-}" TERM
+        signal_process_group "${TRACING_BACKEND_PID:-}" TERM
+        signal_process_group "${FRONTEND_TRACING_PID:-}" TERM
         sleep 0.5
         signal_process_group "${BACKEND_PID:-}" KILL
         signal_process_group "${FRONTEND_PUBLIC_PID:-}" KILL
         signal_process_group "${FRONTEND_ADMIN_PID:-}" KILL
         signal_process_group "${ACCOUNTS_HOST_PID:-}" KILL
+        signal_process_group "${TRACING_BACKEND_PID:-}" KILL
+        signal_process_group "${FRONTEND_TRACING_PID:-}" KILL
         kill -KILL "$recorded_runner_pid" 2>/dev/null || true
     fi
 
@@ -498,7 +587,7 @@ case "$action" in
         stop_local_services
         ;;
     *)
-        echo "Usage: scripts/dev-services.sh [run|down] [all|backend|frontend|frontend-public|accounts-host|docker]" >&2
+    echo "Usage: scripts/dev-services.sh [run|down] [all|backend|frontend|frontend-public|accounts-host|tracing|tracing-backend|frontend-tracing|docker]" >&2
         exit 2
         ;;
 esac

@@ -19,7 +19,7 @@
 | unit | 与代码同文件的 `#[cfg(test)] mod tests`：纯逻辑、边界、错误分支；用 `tpl-core` 的内存替身（`auth::testing`）代替端口实现 |
 | integration | `services/<service>/crates/<layer>/tests/*.rs`：走完整路由与中间件，替换掉慢/贵/不稳定的依赖（如 `services/accounts/crates/api/tests/auth_routes.rs`） |
 | real entry | 账号服务真实进程：`just run backend` 或独立容器 `just accounts-up` 后用 `curl`；本地全栈 URL 由 `just run` 打印；真实 socket + 真实 PostgreSQL/Redis 的自动化测试在 `services/accounts/tests/http_end_to_end.rs`（`just test real`） |
-| user flow | 真实浏览器：`just web-e2e`（`frontend-public/e2e/`、`frontend-admin/e2e/`），起真实的数据库、后端、前端，用 Chrome 走完用户可见的流程 |
+| user flow | 真实浏览器：`just web-e2e`（`frontends/public/e2e/`、`frontends/admin/e2e/`），起真实的数据库、后端、前端，用 Chrome 走完用户可见的流程 |
 | live | 仅在外部服务行为无法用本地替身证明时使用，且必须显式 opt-in |
 
 规则：
@@ -32,7 +32,7 @@
 ## 前端验证
 
 - 前端改动至少跑 `just web-check`（类型、lint、生产构建）；涉及**用户可见流程**（登录、注册、受保护页面、错误提示）时必须跑 `just web-e2e`，它走的是真实浏览器 + 真实后端，属于 `real user flow` 层
-- 改**后端的接口契约**（字段名、返回结构、错误码、状态码）时，同步改 `frontend-public/lib/api/`、`frontend-admin/src/api/` 和 e2e，并重跑 `just web-e2e`：前端的类型是手写的，编译器发现不了与后端的契约漂移
+- 改**后端的接口契约**（字段名、返回结构、错误码、状态码）时，同步改 `frontends/public/lib/api/`、`frontends/admin/src/api/` 和 e2e，并重跑 `just web-e2e`：前端的类型是手写的，编译器发现不了与后端的契约漂移
 - 截图或断言只验证到哪一层就写哪一层：组件预览、生产构建、真实用户流程不要混为一谈
 - 断言要等待异步加载完成（`waitFor`）；「刚跳转完就立刻检查文本」是测试自身的竞态，不是前端的 bug，也不能用来掩盖前端的 bug
 

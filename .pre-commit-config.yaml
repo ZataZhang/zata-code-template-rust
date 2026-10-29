@@ -13,7 +13,7 @@ default_install_hook_types: [pre-commit, commit-msg]
 # - 依赖与构建产物
 # - 锁文件（工具生成，不应手工改）
 # - 任意服务的 migrations/：sqlx 会记录已应用迁移的校验和，文件卫生钩子改写会让校验失败
-exclude: '^(frontend-[a-z]+/(node_modules|\.next)/|.*(^|/)migrations/|.*pnpm-lock\.yaml$|Cargo\.lock$|scripts/view/assets/mermaid\.min\.js$)'
+exclude: '^(frontends/[^/]+/(node_modules|\.next)/|.*(^|/)migrations/|.*pnpm-lock\.yaml$|Cargo\.lock$|scripts/view/assets/mermaid\.min\.js$)'
 
 repos:
   # ==========================================
@@ -63,25 +63,25 @@ repos:
 
       - id: web-typecheck-lint
         name: 前端类型检查 + lint
-        entry: bash -c 'cd frontend-public && pnpm typecheck && pnpm lint'
+        entry: bash -c 'cd frontends/public && pnpm typecheck && pnpm lint'
         language: system
-        files: '^frontend-public/'
-        exclude: '^frontend-public/(e2e/|README\.md$)'
+        files: '^frontends/public/'
+        exclude: '^frontends/public/(e2e/|README\.md$)'
         pass_filenames: false
 
       - id: web-admin-typecheck-lint
         name: 管理后台类型检查 + lint
-        entry: bash -c 'cd frontend-admin && pnpm typecheck && pnpm lint'
+        entry: bash -c 'cd frontends/admin && pnpm typecheck && pnpm lint'
         language: system
-        files: '^frontend-admin/'
-        exclude: '^frontend-admin/(README\.md$|LICENSE$)'
+        files: '^frontends/admin/'
+        exclude: '^frontends/admin/(README\.md$|LICENSE$)'
         pass_filenames: false
 
       - id: i18n-keys
         name: 前端 en/zh 文案 key 对齐
         entry: node scripts/check-i18n-keys.mjs
         language: system
-        files: '^frontend-[a-z]+/(messages|src/locales)/.*\.json$'
+        files: '^frontends/[^/]+/(messages|src/locales)/.*\.json$'
         pass_filenames: false
 
       - id: prd-archive-gate
@@ -102,7 +102,7 @@ repos:
         entry: cargo xtask hook max-lines --max-lines 1000 --warn-only
         language: system
         files: '\.(rs|ts|tsx)$'
-        exclude: '^frontend-public/components/ui/'
+        exclude: '^frontends/public/components/ui/'
 
       - id: guard-test-modification
         name: 修改守卫测试需要 GUARD_UPDATE_ACK=1

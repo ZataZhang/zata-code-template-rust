@@ -5,20 +5,27 @@ use std::net::IpAddr;
 
 use super::ComposeEnvironment;
 
-const ALLOWED_KEYS: [&str; 10] = [
+const ALLOWED_KEYS: [&str; 13] = [
     "POSTGRES_PASSWORD",
     "REDIS_PASSWORD",
+    "AGENT_TRACING_DB_PASSWORD",
+    "AGENT_TRACING_PRODUCERS_JSON",
     "ADMIN_BOOTSTRAP_USERNAME",
     "ADMIN_BOOTSTRAP_PASSWORD",
     "COOKIE_SECURE",
     "TRUSTED_PROXY_CIDR",
     "WEB_PORT",
     "ADMIN_PORT",
+    "TRACING_UI_PORT",
     "ACCOUNTS_PORT",
     "LOG_FORMAT",
 ];
 
-const REQUIRED_KEYS: [&str; 2] = ["POSTGRES_PASSWORD", "REDIS_PASSWORD"];
+const REQUIRED_KEYS: [&str; 3] = [
+    "POSTGRES_PASSWORD",
+    "REDIS_PASSWORD",
+    "AGENT_TRACING_DB_PASSWORD",
+];
 const MAX_COMPOSE_PROPERTIES_BYTES: usize = 64 * 1024;
 
 #[derive(Debug, thiserror::Error)]
@@ -100,7 +107,7 @@ pub(super) fn parse_properties(
 fn validate_typed_values(
     environment_variables: &BTreeMap<String, String>,
 ) -> Result<(), ComposePropertiesError> {
-    for key in ["WEB_PORT", "ADMIN_PORT", "ACCOUNTS_PORT"] {
+    for key in ["WEB_PORT", "ADMIN_PORT", "TRACING_UI_PORT", "ACCOUNTS_PORT"] {
         if let Some(value) = environment_variables.get(key)
             && value.parse::<u16>().map_or(true, |port| port == 0)
         {
@@ -168,15 +175,15 @@ mod tests {
     #[test]
     fn comments_and_empty_lines_are_ignored() {
         let environment_variables = parsed_values(
-            "# compose settings\n\n! ignored comment\nPOSTGRES_PASSWORD=pg\nREDIS_PASSWORD=redis\n",
+            "# compose settings\n\n! ignored comment\nPOSTGRES_PASSWORD=pg\nREDIS_PASSWORD=redis\nAGENT_TRACING_DB_PASSWORD=trace\n",
         );
-        assert_eq!(environment_variables.len(), 2);
+        assert_eq!(environment_variables.len(), 3);
     }
 
     #[test]
     fn values_are_kept_literally_including_shell_syntax_equals_and_spaces() {
         let environment_variables = parsed_values(
-            "POSTGRES_PASSWORD=pg\nREDIS_PASSWORD=redis\nADMIN_BOOTSTRAP_PASSWORD=literal = ${NO_EXPANSION} with spaces\n",
+            "POSTGRES_PASSWORD=pg\nREDIS_PASSWORD=redis\nAGENT_TRACING_DB_PASSWORD=trace\nADMIN_BOOTSTRAP_PASSWORD=literal = ${NO_EXPANSION} with spaces\n",
         );
         let actual_password = environment_variables
             .get("ADMIN_BOOTSTRAP_PASSWORD")
@@ -248,22 +255,28 @@ mod tests {
     #[test]
     fn non_secret_compose_values_are_validated_before_process_launch() {
         assert!(matches!(
-            parse_properties("POSTGRES_PASSWORD=pg\nREDIS_PASSWORD=redis\nWEB_PORT=0\n"),
+            parse_properties(
+                "POSTGRES_PASSWORD=pg\nREDIS_PASSWORD=redis\nAGENT_TRACING_DB_PASSWORD=trace\nWEB_PORT=0\n"
+            ),
             Err(ComposePropertiesError::InvalidTypedValue { key: "WEB_PORT" })
         ));
         assert!(matches!(
-            parse_properties("POSTGRES_PASSWORD=pg\nREDIS_PASSWORD=redis\nCOOKIE_SECURE=yes\n"),
+            parse_properties(
+                "POSTGRES_PASSWORD=pg\nREDIS_PASSWORD=redis\nAGENT_TRACING_DB_PASSWORD=trace\nCOOKIE_SECURE=yes\n"
+            ),
             Err(ComposePropertiesError::InvalidTypedValue {
                 key: "COOKIE_SECURE"
             })
         ));
         assert!(matches!(
-            parse_properties("POSTGRES_PASSWORD=pg\nREDIS_PASSWORD=redis\nLOG_FORMAT=debug\n"),
+            parse_properties(
+                "POSTGRES_PASSWORD=pg\nREDIS_PASSWORD=redis\nAGENT_TRACING_DB_PASSWORD=trace\nLOG_FORMAT=debug\n"
+            ),
             Err(ComposePropertiesError::InvalidTypedValue { key: "LOG_FORMAT" })
         ));
         assert!(matches!(
             parse_properties(
-                "POSTGRES_PASSWORD=pg\nREDIS_PASSWORD=redis\nTRUSTED_PROXY_CIDR=127.0.0.1;\n"
+                "POSTGRES_PASSWORD=pg\nREDIS_PASSWORD=redis\nAGENT_TRACING_DB_PASSWORD=trace\nTRUSTED_PROXY_CIDR=127.0.0.1;\n"
             ),
             Err(ComposePropertiesError::InvalidTypedValue {
                 key: "TRUSTED_PROXY_CIDR"
@@ -274,7 +287,7 @@ mod tests {
     #[test]
     fn valid_ports_and_proxy_cidrs_are_accepted() {
         let environment_variables = parsed_values(
-            "POSTGRES_PASSWORD=pg\nREDIS_PASSWORD=redis\nWEB_PORT=3000\nADMIN_PORT=8081\nACCOUNTS_PORT=8082\nCOOKIE_SECURE=false\nLOG_FORMAT=json\nTRUSTED_PROXY_CIDR=172.16.0.0/12\n",
+            "POSTGRES_PASSWORD=pg\nREDIS_PASSWORD=redis\nAGENT_TRACING_DB_PASSWORD=trace\nWEB_PORT=3000\nADMIN_PORT=8081\nTRACING_UI_PORT=8082\nACCOUNTS_PORT=8083\nCOOKIE_SECURE=false\nLOG_FORMAT=json\nTRUSTED_PROXY_CIDR=172.16.0.0/12\n",
         );
         assert_eq!(
             environment_variables.get("WEB_PORT").map(String::as_str),
