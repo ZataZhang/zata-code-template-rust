@@ -1,0 +1,134 @@
+.accounts-auth {
+  width: 100%;
+  border: 1px solid var(--accounts-border, var(--border, #e4e4e7));
+  border-radius: 1rem;
+  background: var(--accounts-card, var(--card, #fff));
+  color: var(--accounts-foreground, var(--foreground, #18181b));
+  padding: 2rem;
+  box-shadow: 0 10px 30px rgb(24 24 27 / 8%);
+  font-family: inherit;
+}
+
+.accounts-auth__header {
+  margin-bottom: 1.5rem;
+  text-align: center;
+}
+
+.accounts-auth__header h1 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 650;
+  line-height: 1.3;
+}
+
+.accounts-auth__header p {
+  margin: 0.45rem 0 0;
+  color: var(--accounts-muted, var(--muted-foreground, #71717a));
+  font-size: 0.9rem;
+}
+
+.accounts-auth__form {
+  display: grid;
+  gap: 1rem;
+}
+
+.accounts-auth__field {
+  display: grid;
+  gap: 0.45rem;
+  font-size: 0.875rem;
+  font-weight: 550;
+}
+
+.accounts-auth__field-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.accounts-auth__field input {
+  width: 100%;
+  min-height: 2.65rem;
+  border: 1px solid var(--accounts-input, var(--input, #d4d4d8));
+  border-radius: 0.5rem;
+  background: transparent;
+  color: inherit;
+  padding: 0.55rem 0.75rem;
+  font: inherit;
+  font-weight: 400;
+}
+
+.accounts-auth__field input:focus-visible {
+  outline: 2px solid var(--accounts-ring, var(--ring, #8b5cf6));
+  outline-offset: 2px;
+}
+
+.accounts-auth__forgot,
+.accounts-auth__switch button {
+  width: fit-content;
+  border: 0;
+  background: transparent;
+  color: var(--accounts-primary, var(--primary, #6d28d9));
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.accounts-auth__forgot {
+  justify-self: end;
+  font-size: 0.78rem;
+}
+
+.accounts-auth__error {
+  margin: 0;
+  color: var(--accounts-danger, #b91c1c);
+  font-size: 0.875rem;
+}
+
+.accounts-auth__submit {
+  display: inline-flex;
+  min-height: 2.7rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  border: 0;
+  border-radius: 0.5rem;
+  background: var(--accounts-primary, var(--primary, #6d28d9));
+  color: var(--accounts-primary-foreground, var(--primary-foreground, #fff));
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+}
+
+.accounts-auth__submit:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.accounts-auth__spinner {
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid currentcolor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: accounts-auth-spin 0.7s linear infinite;
+}
+
+.accounts-auth__switch {
+  margin: 1.5rem 0 0;
+  color: var(--accounts-muted, var(--muted-foreground, #71717a));
+  font-size: 0.875rem;
+  text-align: center;
+}
+
+.accounts-auth__switch button {
+  font-size: inherit;
+}
+
+@keyframes accounts-auth-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .accounts-auth__spinner { animation-duration: 1.8s; }
+}

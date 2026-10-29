@@ -26,7 +26,10 @@
 |---|---|
 | `just` | 列出所有任务 |
 | `just sync` | 预先下载依赖（`cargo fetch --locked`） |
-| `just run` | 启动服务（读取 `config.toml` 与 `.env.local`） |
+| `just run` / `just down` | 启停本地 API、公开站点、管理后台和账号 UI 第二宿主；`run` 自动安装前端依赖、打印 URL 并读取 `config.toml` 与 `.env.local` |
+| `just run backend` | 只启动账号 API；URL 由 `APP_SERVER__PORT` 决定（默认 8080） |
+| `just run accounts-host` | 单独启动第二宿主（需要已有 API），默认 URL `http://127.0.0.1:4174` |
+| `just run docker` / `just down docker` | Docker 整栈启动 / 停止，等价于 `just stack-up` / `just stack-down` |
 | `just check` | 只检查能否编译（写代码时最常用） |
 | `just sqlx-prepare` | 用真实本地 PostgreSQL 更新 `.sqlx/` 编译期查询元数据（先 `just db-up`，需安装 `sqlx-cli`） |
 | `just copy <目录>` | 从 Rust 模板复制干净工作树；已有目录用 `--force` 时只覆盖同名文件，不会初始化 Git |
@@ -44,14 +47,14 @@
 | `just stack-up` / `stack-down` / `stack-reset` / `stack-logs` | 整套服务（`docker-compose.yml`）；`stack-reset` 会清空数据 |
 | `just db-backup` / `db-restore <文件>` | PostgreSQL 备份与恢复，见 `docs/guides/backup.md` |
 | `just web-admin-install` / `web-admin-dev` / `web-admin-check` / `web-admin-test` | 管理后台：安装依赖 / 开发服务器 / 类型+lint+knip+格式+构建 / 浏览器组件测试 |
-| `just web-dev` | 启动前端开发服务器（先另开终端 `just run`） |
+| `just web-dev` | 单独启动公开前端开发服务器（需另有 API）；通常直接用 `just run` 启动整套本地开发服务 |
 | `just web-check` | 前端：类型检查 + lint + 生产构建 |
 | `just web-e2e` | 前端：真实浏览器端到端测试（需要本机有 Chrome 与 Docker） |
 | `just web-docker-build [后端地址]` | 构建前端镜像；后端地址是**构建参数**（Next.js 的 rewrites 在构建时固化） |
 | `just ci-all` | 后端 + 前端的完整检查：`ci` + `web-check` + `web-admin-check` |
 | `just prd <子命令>` | PRD 工具链（Rust，`tools/xtask`）：`status` / `start` / `heartbeat` / `release` / `check` / `review`，详见 `docs/guides/prd-workflow.md` |
 | `just check-lines` | 文件行数硬上限检查（1000 个非空行；CI 里用） |
-| `just docker-build` | 构建镜像 `tpl-app:local` |
+| `just docker-build` | 构建账号服务镜像 `tpl-accounts:local` |
 
 `just test` 是常规验证命令，任务要求运行时无需单独征求用户确认。
 

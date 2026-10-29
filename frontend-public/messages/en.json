@@ -1,7 +1,7 @@
 {
   "html": {
     "title": "My App - Project Template",
-    "description": "A Rust web service template with a layered skeleton, built-in authentication, and a Next.js public site. Ships with no business domain."
+    "description": "A Rust project template with a deployable accounts service, reusable React sign-in UI, and a layered foundation for independent business services."
   },
   "common": {
     "appName": "My App",
@@ -22,12 +22,12 @@
   "marketing": {
     "hero": {
       "badge": "A project template built for long-term evolution",
-      "titleLine1": "A clean skeleton,",
-      "titleAccent": "engineering only",
-      "subtitle": "A layered modular monolith in Rust with authentication built in. No business domain inside, so every derived project starts its own from scratch.",
+      "titleLine1": "Reusable modules,",
+      "titleAccent": "built to evolve",
+      "subtitle": "A Rust project template with an independent accounts service and reusable React authentication UI. Add business modules as separately deployed services with their own API and data.",
       "ctaPrimary": "Start for free",
       "ctaSecondary": "Explore the skeleton",
-      "highlightNoDomain": "No business domain residue",
+      "highlightNoDomain": "Independent accounts service",
       "highlightAuth": "Auth works out of the box",
       "highlightTooling": "Complete engineering setup"
     },
@@ -38,18 +38,18 @@
     },
     "features": {
       "sectionTitle": "Core skeleton",
-      "sectionSubtitle": "The template only promises engineering capabilities; business boundaries are yours",
+      "sectionSubtitle": "Reuse accounts and engineering foundations while keeping each business service independent",
       "architecture": {
         "title": "Layered backend architecture",
-        "description": "api / core / engines / infrastructure are separate Cargo crates that depend inwards on core, guarded by the compiler and a dependency-direction test."
+        "description": "The accounts service has its own entry point and migrations. Shared Rust crates keep internal code layered; other services can live under services/<module> with independent APIs and data."
       },
       "authDomains": {
         "title": "Secure sign-in",
-        "description": "Email and password with argon2id hashing, HttpOnly cookie sessions stored in Redis, and rate limiting on sign-in and registration."
+        "description": "The standalone accounts service provides email/password sign-in, argon2id password hashing, HttpOnly Redis sessions, and rate limiting."
       },
       "frontends": {
         "title": "Public site skeleton",
-        "description": "A Next.js site with registration, sign-in and a protected area, talking to the backend only over /api/* HTTP."
+        "description": "A Next.js site with registration, sign-in and a protected area. It uses the reusable React auth package and connects through same-origin /api HTTP."
       },
       "observability": {
         "title": "Probes and logging",
@@ -77,7 +77,7 @@
       },
       "run": {
         "title": "Start the services",
-        "description": "Run just sync dev to install dependencies, then just run to boot the backend and both frontends."
+        "description": "Run just accounts-up for the Docker service on port 8082, then start the frontends with their documented commands. The native accounts-service also runs with just run on port 8080."
       }
     },
     "faq": {
@@ -89,7 +89,7 @@
       },
       "businessCode": {
         "question": "Does the template ship business code?",
-        "answer": "No business domain is included. Auth, configuration, health probes, and persistence are the only skeleton; derived projects add their own business modules."
+        "answer": "The template includes a standalone accounts service and reusable React auth UI. Add other business services under services/<module> with independent API and data boundaries, then connect them over HTTP."
       },
       "createProject": {
         "question": "How do I create a new project from the template?",
@@ -98,12 +98,12 @@
     },
     "cta": {
       "title": "Ready to get started?",
-      "body": "Create an account, enter the protected area, and build your business on a clean backend skeleton.",
+      "body": "Create an account, enter the protected area, then add independent business services with clear API and data boundaries.",
       "button": "Register for free"
     },
     "aboutPage": {
       "title": "About this template",
-      "description": "A Rust template for starting new projects: a layered backend skeleton, built-in authentication, and complete engineering facilities. It deliberately ships no business domain, so every derived project builds its own from a clean starting point.",
+      "description": "A Rust template for starting new projects: an independently deployable accounts service, reusable React authentication UI, and engineering foundations for separate business services.",
       "principles": {
         "simple": {
           "title": "Simplicity first",
@@ -115,25 +115,25 @@
         },
         "evolution": {
           "title": "Continuous evolution",
-          "description": "The skeleton keeps improving while business boundaries stay with derived projects."
+          "description": "The accounts module stays reusable while each business service keeps its own API and data boundary."
         }
       }
     },
     "featuresPage": {
       "title": "Template capabilities",
-      "subtitle": "Engineering skeleton only — no business domain included",
+      "subtitle": "Standalone accounts service and foundations for independent business services",
       "items": {
         "architecture": {
           "title": "Layered architecture",
-          "description": "api / core / engines / infrastructure are Cargo crates that depend inwards on core, with cross-layer ports decoupled."
+          "description": "The accounts service has its own entry point and migrations. Other services can live under services/<module> with independent APIs and data."
         },
         "authDomains": {
           "title": "Secure sign-in",
-          "description": "argon2id passwords, HttpOnly sessions backed by Redis, and rate limiting on sign-in and registration."
+          "description": "The accounts service provides argon2id passwords, HttpOnly Redis sessions, and rate limiting on sign-in and registration."
         },
         "frontends": {
           "title": "Public site skeleton",
-          "description": "A Next.js site with registration, sign-in and a protected area, ready to use out of the box."
+          "description": "A Next.js site with registration, sign-in and a protected area, using the reusable React auth package."
         },
         "config": {
           "title": "Unified configuration",
@@ -185,13 +185,13 @@
     "title": "Workspace",
     "signedIn": "Signed in",
     "gettingStartedTitle": "Start building your business",
-    "gettingStartedBody": "This template keeps only auth and infrastructure, with no business domain included. Add your own modules on the layered architecture: define use cases and ports under crates/core/, implement them under crates/infrastructure/ or crates/engines/, and expose HTTP routes under crates/api/.",
+    "gettingStartedBody": "This template includes an independent accounts service and reusable React auth UI. Add each business module as a service under services/<module> with its own API and data, then connect services over HTTP. See docs/guides/accounts-integration.md for service boundaries.",
     "accountSettings": "Account settings"
   },
   "settings": {
     "title": "Settings",
     "aboutTitle": "About this template",
-    "aboutBody": "This template keeps only auth and infrastructure, with no business domain included. Build your own business on top of it.",
+    "aboutBody": "Reuse the accounts service and React auth UI. Add other business services under services/<module> with independent APIs and data, then connect them over HTTP.",
     "signOut": "Sign out"
   },
   "footer": {

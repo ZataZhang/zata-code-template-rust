@@ -1,8 +1,15 @@
-# 非敏感默认值。优先级：代码默认值 < 本文件 < 环境变量。
+# 非敏感默认值。优先级：代码默认值 < 本文件 < 可选 Nacos TOML < 环境变量。
 #
 # - 覆盖单个值：APP_<分区>__<字段>，双下划线表示层级，如 APP_SERVER__PORT=9000
-# - 密钥与连接串（含密码）不要写在这里，放 .env.local 或部署平台的环境变量
+# - 数据库/Redis 连接串与管理员密码由 Nacos 或进程环境提供；.env.local 只放 Nacos 地址和认证凭据
+# - Nacos namespace/group/Data ID 等非敏感定位信息固定写在下方 [nacos]；.env.local 只提供 server 地址与认证凭据
 # - 指定别的配置文件：APP_CONFIG_FILE=/path/to/config.toml
+
+[nacos]
+namespace_id = "rust-study-dev"
+group = "ACCOUNTS"
+app_data_id = "rust-study-local.toml"
+compose_data_id = "rust-study-compose.properties"
 
 [server]
 host = "127.0.0.1" # 容器里要改成 "0.0.0.0"（Dockerfile 已通过环境变量处理）
@@ -13,12 +20,12 @@ level = "info"   # 也可用 RUST_LOG 覆盖，如 RUST_LOG=tpl_api=debug,info
 format = "text"  # "text"（本地阅读）或 "json"（日志采集）
 
 [database]
-# url 来自环境变量 DATABASE_URL。配置后启动时会自动执行 migrations/ 下的迁移，所以启动时数据库必须可达。
+# url 可来自 Nacos TOML 或环境变量 DATABASE_URL。配置后账号服务启动时会自动执行 services/accounts/migrations/ 下的迁移，所以启动时数据库必须可达。
 max_connections = 10
 acquire_timeout_secs = 3
 
 [redis]
-# url 来自环境变量 REDIS_URL，用作会话存储。
+# url 可来自 Nacos TOML 或环境变量 REDIS_URL，用作会话存储。
 timeout_secs = 3 # 单次操作（含首次建立连接）的超时
 
 # 认证（注册/登录/会话）需要 DATABASE_URL 和 REDIS_URL 同时配置；缺任何一个，/auth/* 返回 503，其余功能不受影响。

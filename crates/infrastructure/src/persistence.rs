@@ -32,16 +32,16 @@ pub fn connect_lazy(
         .connect_lazy(database_url)
 }
 
-/// 执行仓库根目录 `migrations/` 下尚未应用的迁移。可重复调用：已应用的会被跳过。
+/// 执行账号服务 `services/accounts/migrations/` 下尚未应用的迁移。可重复调用：已应用的会被跳过。
 ///
-/// SQL 文件在**编译期**嵌入二进制（`build.rs` 监视该目录），所以部署时不需要带上 `migrations/` 目录，
-/// 但构建镜像时 `migrations/` 必须在构建上下文里。
+/// SQL 文件在**编译期**嵌入账号服务二进制（`build.rs` 监视该目录），所以部署时不需要带迁移目录，
+/// 但构建镜像时服务迁移必须在构建上下文里。
 ///
 /// # Errors
 ///
 /// 数据库不可达、迁移 SQL 出错，或已应用的迁移文件被改动过时返回错误。
 pub async fn run_migrations(connection_pool: &PgPool) -> Result<(), sqlx::migrate::MigrateError> {
-    sqlx::migrate!("../../migrations")
+    sqlx::migrate!("../../services/accounts/migrations")
         .run(connection_pool)
         .await
 }

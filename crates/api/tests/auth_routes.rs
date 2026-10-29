@@ -1,7 +1,7 @@
 //! 认证路由的 HTTP 行为测试：走完整的路由与中间件，只把用户存储、会话存储、密码哈希换成内存替身。
 //!
 //! 浏览器行为（带上 Cookie）在这里用辅助函数模拟；真实 socket + 真实 PostgreSQL/Redis 的
-//! 端到端验证在 `tpl-app` 的 `tests/http_end_to_end.rs`。
+//! 真实服务入口验证在 `services/accounts/tests/http_end_to_end.rs`。
 
 use std::net::SocketAddr;
 use std::sync::Arc;

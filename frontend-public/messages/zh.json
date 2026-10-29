@@ -1,7 +1,7 @@
 {
   "html": {
     "title": "My App - 项目模板",
-    "description": "分层后端骨架 + 内置认证 + Next.js 前台的 Rust Web 服务模板，不内置业务域。"
+    "description": "Rust 项目模板，提供可独立部署的账号服务、可复用的 React 登录界面，以及构建独立业务服务所需的分层基础。"
   },
   "common": {
     "appName": "My App",
@@ -22,12 +22,12 @@
   "marketing": {
     "hero": {
       "badge": "面向长期演进的项目模板",
-      "titleLine1": "干净的骨架，",
-      "titleAccent": "只留工程化",
-      "subtitle": "分层模块化单体（Rust），内置认证。不内置业务域，让每个派生项目从零开始搭建自己的业务。",
+      "titleLine1": "可复用的模块，",
+      "titleAccent": "持续演进",
+      "subtitle": "Rust 项目模板内置独立账号服务和可复用的 React 认证界面。其他业务模块可作为独立部署的服务，并拥有自己的 API 与数据。",
       "ctaPrimary": "免费开始",
       "ctaSecondary": "了解骨架",
-      "highlightNoDomain": "无业务域残留",
+      "highlightNoDomain": "独立账号服务",
       "highlightAuth": "认证开箱即用",
       "highlightTooling": "工程化完整"
     },
@@ -38,18 +38,18 @@
     },
     "features": {
       "sectionTitle": "核心骨架",
-      "sectionSubtitle": "模板只承诺工程化能力，业务边界留给你",
+      "sectionSubtitle": "复用账号与工程基础，同时保持各业务服务相互独立",
       "architecture": {
         "title": "分层后端架构",
-        "description": "api / core / engines / infrastructure 是独立的 Cargo crate，都向内依赖 core，由编译器和一个依赖方向测试共同守护。"
+        "description": "账号服务拥有独立入口与迁移。共享 Rust crate 保持内部代码分层；其他服务可放在 services/<module>，使用各自的 API 和数据。"
       },
       "authDomains": {
         "title": "安全的登录",
-        "description": "邮箱加密码，argon2id 哈希，HttpOnly Cookie 会话存放在 Redis，登录和注册都有限流。"
+        "description": "独立账号服务提供邮箱密码登录、argon2id 密码哈希、Redis 中的 HttpOnly 会话，以及登录注册限流。"
       },
       "frontends": {
         "title": "前台站点骨架",
-        "description": "Next.js 站点，含注册、登录和受保护区域，只通过 /api/* HTTP 与后端通信。"
+        "description": "Next.js 站点包含注册、登录和受保护区域，使用可复用 React 认证包，并通过同源 /api HTTP 连接账号服务。"
       },
       "observability": {
         "title": "探针与日志",
@@ -77,7 +77,7 @@
       },
       "run": {
         "title": "启动服务",
-        "description": "just sync dev 安装依赖，just run 同时启动后端与两个前端。"
+        "description": "运行 just accounts-up 在 8082 启动 Docker 账号服务，再按说明启动前端。原生 accounts-service 也可通过 just run 在 8080 启动。"
       }
     },
     "faq": {
@@ -89,7 +89,7 @@
       },
       "businessCode": {
         "question": "模板内置业务代码吗？",
-        "answer": "不包含任何业务域。认证、配置、健康探针与持久化是仅有的骨架，派生项目自行添加业务模块。"
+        "answer": "模板包含独立账号服务和可复用 React 认证界面。其他业务服务由你添加到 services/<module>，拥有独立 API 和数据边界，再通过 HTTP 互相连接。"
       },
       "createProject": {
         "question": "如何用模板创建新项目？",
@@ -98,12 +98,12 @@
     },
     "cta": {
       "title": "准备好开始了吗？",
-      "body": "注册账号，进入受保护区域，从干净的后端骨架开始搭建你的业务。",
+      "body": "注册账号并进入受保护区域，再按清晰的 API 与数据边界添加独立业务服务。",
       "button": "免费注册"
     },
     "aboutPage": {
       "title": "关于本模板",
-      "description": "这是一个用于启动新项目的 Rust 模板：提供分层后端骨架、内置认证与完整工程化设施，同时刻意不内置任何业务域，让每个派生项目从干净的起点开始搭建自己的业务。",
+      "description": "这是一个用于启动新项目的 Rust 模板：包含可独立部署的账号服务、可复用 React 认证界面，以及构建独立业务服务所需的工程基础。",
       "principles": {
         "simple": {
           "title": "简洁至上",
@@ -115,25 +115,25 @@
         },
         "evolution": {
           "title": "持续演进",
-          "description": "骨架能力持续打磨，业务边界始终留给派生项目。"
+          "description": "账号模块保持可复用，各业务服务拥有自己的 API 和数据边界。"
         }
       }
     },
     "featuresPage": {
       "title": "模板能力",
-      "subtitle": "只提供工程化骨架，不内置任何业务域",
+      "subtitle": "独立账号服务，以及构建独立业务服务所需的基础",
       "items": {
         "architecture": {
           "title": "分层架构",
-          "description": "api / core / engines / infrastructure 是 Cargo crate，都向内依赖 core，跨层通过端口解耦。"
+          "description": "账号服务拥有独立入口和迁移。其他服务可放在 services/<module>，使用各自的 API 和数据。"
         },
         "authDomains": {
           "title": "安全的登录",
-          "description": "argon2id 密码、Redis 存放的 HttpOnly 会话，登录和注册都有限流。"
+          "description": "账号服务提供 argon2id 密码、Redis 中的 HttpOnly 会话，以及登录注册限流。"
         },
         "frontends": {
           "title": "前台站点骨架",
-          "description": "Next.js 站点，含注册、登录和受保护区域，开箱即用。"
+          "description": "Next.js 站点包含注册、登录和受保护区域，并使用可复用的 React 认证包。"
         },
         "config": {
           "title": "统一配置",
@@ -185,13 +185,13 @@
     "title": "工作区",
     "signedIn": "已登录",
     "gettingStartedTitle": "开始搭建你的业务",
-    "gettingStartedBody": "本模板仅保留认证与基础设施骨架，不内置任何业务域。请根据你的项目在分层架构上添加业务模块，例如在 crates/core/ 定义用例与端口、在 crates/infrastructure/ 或 crates/engines/ 实现它们、在 crates/api/ 暴露 HTTP 路由。",
+    "gettingStartedBody": "本模板包含独立账号服务和可复用 React 认证界面。请把每个业务模块作为服务放在 services/<module>，拥有自己的 API 和数据，再通过 HTTP 连接服务。服务边界说明见 docs/guides/accounts-integration.md。",
     "accountSettings": "账户设置"
   },
   "settings": {
     "title": "设置",
     "aboutTitle": "关于本模板",
-    "aboutBody": "本模板仅保留认证与基础设施骨架，不内置任何业务域。请在此基础上搭建你自己的业务。",
+    "aboutBody": "复用账号服务和 React 认证界面，再将其他业务服务放在 services/<module>，使用独立 API 与数据，并通过 HTTP 连接。",
     "signOut": "退出登录"
   },
   "footer": {

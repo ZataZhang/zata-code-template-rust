@@ -2,6 +2,8 @@
 
 数据库里有真实用户和管理员数据，所以备份不是可选项。**只有 PostgreSQL 需要备份**：Redis 里只有会话与限流计数，丢了只是让用户重新登录。
 
+备份与恢复命令会和其他 Compose 运维命令一样，先通过 `compose-config` 从 Nacos 读取部署配置。执行机必须能访问 Nacos，并在 `.env.local` 配置 Nacos 地址与认证凭据；namespace/group/Data ID 从项目配置 `[nacos]` 读取。部署值不会保存为本地 `.env.compose` 文件。即使当前操作只针对数据库，也不能在 Nacos 不可用时绕过配置读取。
+
 ## 备份
 
 ```bash
@@ -9,7 +11,7 @@ just db-backup                       # 写到 backups/app-<UTC 时间>.dump
 RETENTION_DAYS=14 just db-backup     # 同时清理超过 14 天的旧备份（默认 30）
 ```
 
-脚本（`scripts/db-backup.sh`）做的事：
+脚本（`scripts/db-backup.sh`）通过 Rust `compose-config` 加载 Nacos 配置后执行；需要安装 Rust/Cargo、Just 与 Docker Compose。做的事：
 
 - 在 postgres 容器里 `pg_dump --format=custom`（压缩，可选择性恢复）
 - 先写临时文件，**校验能列出目录且包含 `users` 表后才改名**：失败时不会留下一个看起来正常的坏备份
@@ -23,9 +25,9 @@ RETENTION_DAYS=14 just db-backup     # 同时清理超过 14 天的旧备份（�
 just db-restore backups/app-20261016-120000Z.dump
 ```
 
-**会覆盖当前数据库。** 过程：停 backend → 确认备份文件可读（读不了就中止，**现有数据不动**）→ 清掉现有对象并恢复 → 启动 backend（自动执行迁移，所以恢复到比当前代码旧的备份也能升级到最新结构）。任何一步失败都会尽量把 backend 重新启动。
+**会覆盖当前数据库。** 过程：停 accounts → 确认备份文件可读（读不了就中止，**现有数据不动**）→ 清掉现有对象并恢复 → 启动 accounts（自动执行账号迁移，所以恢复到比当前代码旧的备份也能升级到最新结构）。任何一步失败都会尽量把 accounts 重新启动。
 
-恢复后建议立刻检查：`just stack-logs backend`、登录一次、看用户数。
+恢复后建议立刻检查：`just stack-logs accounts`、登录一次、看用户数。
 
 ## 定时备份
 
@@ -36,7 +38,7 @@ just db-restore backups/app-20261016-120000Z.dump
 10 3 * * * cd /srv/app && RETENTION_DAYS=14 ./scripts/db-backup.sh >>/var/log/app-backup.log 2>&1
 ```
 
-也可以用 systemd timer，或平台自带的定时任务。**备份跟数据库放在同一台机器上不算备份**：再用 `rclone` / `aws s3 cp` 等把 `backups/` 同步到异地（记得加密）。
+也可以用 systemd timer，或平台自带的定时任务。定时执行的主机要能访问 Nacos；把 Nacos 地址和认证参数放在该主机受限的 `.env.local` 或密钥管理中，不要复制 Compose 业务密码到本机。**备份跟数据库放在同一台机器上不算备份**：再用 `rclone` / `aws s3 cp` 等把 `backups/` 同步到异地（记得加密）。
 
 ## 演练
 

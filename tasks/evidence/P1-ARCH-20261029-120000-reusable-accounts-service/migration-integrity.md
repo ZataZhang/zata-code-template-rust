@@ -1,0 +1,4 @@
+# 迁移文件内容核对
+
+- `20261016090000_create_users.sql`：与 HEAD 原文件逐字节一致；SHA256 `ec716ced1efed8109131887bb3686301c9f8c5a4770282ffad30bb4867038bd5`。
+- `20261016120000_add_admin_users.sql`：与 HEAD 原文件逐字节一致；SHA256 `ea80b9f2191449cb9ad5618851720767c80405b4c47c0c170ba42a553444ab53`。

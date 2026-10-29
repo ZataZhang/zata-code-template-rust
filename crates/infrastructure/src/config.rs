@@ -1,13 +1,16 @@
 //! 配置加载。
 //!
-//! 优先级从低到高：代码内默认值 < `config.toml` < 环境变量。
+//! 优先级从低到高：代码默认值 < `config.toml` < Nacos TOML < 环境变量。
 //!
 //! - 非敏感默认值写在 `config.toml`；
-//! - 本地环境变量与密钥写在 `.env.local`（启动时自动加载，不提交到 Git）；
+//! - Nacos 的 namespace/group/Data ID 定位信息写在项目配置的 `[nacos]`；
+//! - 本地 Nacos 地址与认证凭据写在 `.env.local`（启动时自动加载，不提交到 Git）；
+//! - 配置了 `NACOS_SERVER_ADDR` 时，启动时读取 Nacos TOML 配置；
 //! - 环境变量格式为 `APP_<分区>__<字段>`（双下划线表示层级），如 `APP_SERVER__PORT=9000`；
 //! - 数据库与 Redis 连接串用约定俗成的 `DATABASE_URL`、`REDIS_URL`；
-//! - 所有字段都有默认值，env 没填时配置加载也必须成功。
+//! - 所有业务字段都有默认值；未启用 Nacos 且 env 没填时配置加载也必须成功。
 
+use std::collections::BTreeMap;
 use std::fmt;
 use std::time::Duration;
 
@@ -17,13 +20,26 @@ use serde::Deserialize;
 use tpl_core::admin::AdminPolicy;
 use tpl_core::auth::ThrottlePolicy;
 
+mod compose;
+mod nacos;
+
 /// 默认配置文件路径，可用 `APP_CONFIG_FILE` 覆盖。
 const DEFAULT_CONFIG_FILE: &str = "config.toml";
 
 /// 配置加载失败。
 #[derive(Debug, thiserror::Error)]
 #[error("配置加载失败：{0}")]
-pub struct ConfigError(#[source] Box<figment::Error>);
+pub struct ConfigError(#[source] Box<dyn std::error::Error + Send + Sync>);
+
+/// 已校验的 Compose 环境变量。该类型不实现 `Debug`，避免意外记录密钥值。
+pub struct ComposeEnvironment(BTreeMap<String, String>);
+
+impl ComposeEnvironment {
+    /// 消费配置并返回可直接传给子进程的键值对。
+    pub fn into_variables(self) -> impl Iterator<Item = (String, String)> {
+        self.0.into_iter()
+    }
+}
 
 /// 应用全部配置。
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -296,27 +312,60 @@ impl AdminSettings {
 }
 
 impl Settings {
-    /// 加载配置：先读 `.env.local`，再合并 `config.toml` 与环境变量。
+    /// 加载配置：读取本地引导环境变量，再合并 `config.toml`、可选的 Nacos TOML 与环境变量。
     ///
     /// # Errors
     ///
-    /// 配置文件格式错误，或字段类型不匹配（如端口不是数字）时返回错误。
-    pub fn load() -> Result<Self, ConfigError> {
+    /// 配置文件格式错误、字段类型不匹配（如端口不是数字），或已启用的 Nacos 配置源读取失败时返回错误。
+    pub async fn load() -> Result<Self, ConfigError> {
         // `.env.local` 不存在是正常情况（比如生产环境直接注入环境变量）。
         let _ = dotenvy::from_filename(".env.local");
 
-        let config_file_path =
-            std::env::var("APP_CONFIG_FILE").unwrap_or_else(|_| DEFAULT_CONFIG_FILE.to_string());
-        build_figment(&config_file_path)
+        let config_file_path = config_file_path_from_environment();
+        let nacos_config_content = nacos::load_config_from_environment(&config_file_path)
+            .await
+            .map_err(|error| ConfigError(Box::new(error)))?;
+        build_figment_with_nacos(&config_file_path, nacos_config_content.as_deref())
             .extract()
             .map_err(|error| ConfigError(Box::new(error)))
     }
 }
 
+/// 从独立的 Nacos Compose Data ID 加载并校验容器环境变量。
+///
+/// 此入口强制要求 Nacos 可用，不会回退到本地配置文件，也不会加载应用 TOML Data ID。
+/// Nacos 地址和认证凭据从 `.env.local` 或进程环境读取；返回值只包含白名单中的 Compose 变量。
+///
+/// # Errors
+///
+/// Nacos 参数缺失、认证或读取失败，或远端属性格式、键名和值不符合限制时返回错误。
+pub async fn load_compose_environment() -> Result<ComposeEnvironment, ConfigError> {
+    let _ = dotenvy::from_filename(".env.local");
+    let config_file_path = config_file_path_from_environment();
+    let properties = nacos::load_compose_config_from_environment(&config_file_path)
+        .await
+        .map_err(|error| ConfigError(Box::new(error)))?;
+    compose::parse_properties(&properties).map_err(|error| ConfigError(Box::new(error)))
+}
+
+fn config_file_path_from_environment() -> String {
+    std::env::var("APP_CONFIG_FILE").unwrap_or_else(|_| DEFAULT_CONFIG_FILE.to_string())
+}
+
 /// 组装配置来源。文件不存在时 `Toml::file` 会被当作空来源，不会报错。
+#[cfg(test)]
 fn build_figment(config_file_path: &str) -> Figment {
-    Figment::new()
-        .merge(Toml::file(config_file_path))
+    build_figment_with_nacos(config_file_path, None)
+}
+
+/// 按低到高的优先级合并本地文件、Nacos 配置与进程环境变量。
+fn build_figment_with_nacos(config_file_path: &str, nacos_config_content: Option<&str>) -> Figment {
+    let figment = Figment::new().merge(Toml::file(config_file_path));
+    let figment = match nacos_config_content {
+        Some(config_content) => figment.merge(Toml::string(config_content)),
+        None => figment,
+    };
+    figment
         .merge(Env::prefixed("APP_").split("__"))
         .merge(
             Env::raw()

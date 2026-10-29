@@ -1,14 +1,18 @@
 [package]
-name = "tpl-app"
-description = "进程入口与 composition root：创建对象、读取配置、把各层实现接到一起。不承载业务规则。"
+name = "tpl-accounts"
+description = "账号业务服务：普通用户认证、管理员认证与账号管理的独立进程入口和装配层。"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 
 [[bin]]
-name = "server"
+name = "accounts-service"
 path = "src/main.rs"
+
+[[bin]]
+name = "compose-config"
+path = "src/bin/compose_config.rs"
 
 [dependencies]
 # composition root 是唯一允许依赖全部各层的地方。

@@ -1,7 +1,7 @@
 //! 认证用例：注册、登录、会话校验、退出。
 //!
 //! 本模块只含领域规则与**端口**（trait）：用户存储、会话存储、密码哈希都由外层实现，
-//! 由 `tpl-app` 装配。这样规则可以用内存替身（`testing` 模块，仅测试或启用 `testing` feature 时编译）快速测试，不连任何外部服务。
+//! 由 `tpl-accounts` 装配。这样规则可以用内存替身（`testing` 模块，仅测试或启用 `testing` feature 时编译）快速测试，不连任何外部服务。
 
 use std::fmt;
 use std::net::IpAddr;

@@ -15,11 +15,15 @@ default:
 sync:
     cargo fetch --locked
 
-# 启动服务（读取 config.toml 与 .env.local）
-run:
-    cargo run -p tpl-app --bin server
+# 启动本地开发栈：账号 API、公开站点、管理后台和第二宿主；自动安装前端依赖并打印 URL
+run target="all":
+    "{{justfile_directory()}}/scripts/dev-services.sh" run "{{ target }}"
 
-# 发布构建（带优化，产物在 target/release/server）
+# 停止 just run 管理的本地开发进程；Docker 整栈用 `just down docker`
+down target="all":
+    "{{justfile_directory()}}/scripts/dev-services.sh" down "{{ target }}"
+
+# 发布构建（带优化，账号服务产物在 target/release/accounts-service）
 build:
     cargo build --workspace --release
 
@@ -32,7 +36,7 @@ sqlx-prepare:
     #!/usr/bin/env bash
     set -euo pipefail
     export DATABASE_URL="${DATABASE_URL:-{{ local_test_database_url }}}"
-    cargo sqlx migrate run
+    cargo sqlx migrate run --source services/accounts/migrations
     cargo sqlx prepare --workspace -- --all-targets
 
 # 自动格式化
@@ -87,7 +91,7 @@ prd *args:
 
 # 文件行数上限检查（硬上限 1000 个非空行，CI 里用）
 check-lines:
-    cargo xtask hook max-lines --max-lines 1000 --glob '*.rs' crates tools
+    cargo xtask hook max-lines --max-lines 1000 --glob '*.rs' crates services tools
 
 # 安装 git 钩子（提交前检查 + 提交信息检查）。需要先装 pre-commit：brew install pre-commit 或 pipx install pre-commit
 hooks:
@@ -101,6 +105,14 @@ hooks-run:
 check-i18n:
     node scripts/check-i18n-keys.mjs
 
+# 构建可复用账号 UI 包，并生成供宿主安装的版本化 tarball
+accounts-ui-build:
+    cd packages/accounts-ui && pnpm install --frozen-lockfile && pnpm pack:tarball
+
+# 验证独立 React 宿主通过打包 tarball 消费账号 UI 包
+accounts-ui-check: accounts-ui-build
+    cd examples/accounts-host && pnpm install --frozen-lockfile && pnpm typecheck && pnpm build
+
 # 启动本地 PostgreSQL 与 Redis（端口 5433 / 6390）
 db-up:
     docker compose -f docker-compose.testing.yml up -d --wait
@@ -113,33 +125,41 @@ db-down:
 db-reset:
     docker compose -f docker-compose.testing.yml down -v
 
-# 构建镜像
+# 构建账号服务镜像
 docker-build:
-    docker build -t tpl-app:local .
+    docker build -t tpl-accounts:local .
+
+# 单独启动账号服务与它依赖的 PostgreSQL、Redis；部署配置从 Nacos 读取，不启动站点或管理后台
+accounts-up:
+    ./scripts/compose-config.sh compose accounts up -d --build --wait accounts
+
+# 停止账号服务（不停止或删除数据库与 Redis）
+accounts-down:
+    ./scripts/compose-config.sh compose accounts stop accounts
 
 # ---------------------------------------------------------------------------
 # 前台站点（frontend-public，Next.js）
 # ---------------------------------------------------------------------------
 
 # 安装前端依赖（按 pnpm-lock.yaml 精确安装）
-web-install:
+web-install: accounts-ui-build
     cd frontend-public && pnpm install --frozen-lockfile
 
-# 启动前端开发服务器；/api/* 代理到后端（默认 http://localhost:8080，用 BACKEND_URL 覆盖）。先另开终端 `just run`
+# 单独启动公开前端；/api/* 代理到后端。通常直接用 `just run` 启动整套本地服务
 web-dev:
     cd frontend-public && pnpm dev
 
 # 前端检查：类型 + lint + 生产构建
-web-check: check-i18n
+web-check: check-i18n accounts-ui-check
     cd frontend-public && pnpm typecheck && pnpm lint && pnpm build
 
 # 真实浏览器端到端测试：启动数据库、后端、前端，用 Chrome 走完注册/登录/退出/限流（需要本机有 Chrome）
-web-e2e:
+web-e2e: accounts-ui-check
     ./scripts/web-e2e.sh
 
 # 构建前端镜像。后端地址必须在构建时给（Next 的 rewrites 在构建时固化）
-web-docker-build backend_url="http://backend:8080":
-    docker build --build-arg BACKEND_URL={{ backend_url }} -t tpl-web:local frontend-public
+web-docker-build backend_url="http://accounts:8080":
+    docker build -f frontend-public/Dockerfile --build-arg BACKEND_URL={{ backend_url }} -t tpl-web:local .
 
 # ---------------------------------------------------------------------------
 # 管理后台（frontend-admin，Vite + React）
@@ -149,7 +169,7 @@ web-docker-build backend_url="http://backend:8080":
 web-admin-install:
     cd frontend-admin && pnpm install --frozen-lockfile
 
-# 启动管理后台开发服务器（默认 5173）；/api/* 代理到后端（默认 8080，用 BACKEND_PORT 覆盖）。先另开终端 `just run`
+# 单独启动管理后台开发服务器（默认 5173）；/api/* 代理到后端。通常直接用 `just run` 启动整套本地服务
 web-admin-dev:
     cd frontend-admin && pnpm dev
 
@@ -161,30 +181,29 @@ web-admin-check: check-i18n
 web-admin-test:
     cd frontend-admin && pnpm test
 
-# 构建管理后台镜像。后端地址在运行时用环境变量 BACKEND_UPSTREAM 指定（默认 backend:8080）
+# 构建管理后台镜像。账号服务地址在运行时用环境变量 BACKEND_UPSTREAM 指定（默认 accounts:8080）
 web-admin-docker-build:
     docker build -t tpl-admin:local frontend-admin
 
 # ---------------------------------------------------------------------------
-# 整套服务（docker-compose.yml：PostgreSQL + Redis + 后端 + 前台 + 管理后台）
+# 整套服务（docker-compose.yml：账号服务 + PostgreSQL + Redis + 前台 + 管理后台）
 # ---------------------------------------------------------------------------
 
-# 构建并启动整套服务；首次会生成带随机密钥的 .env.compose 并打印管理员账号
+# 从 Nacos 加载部署配置并构建、启动整套服务；不会生成本地部署环境文件
 stack-up:
-    ./scripts/stack-env.sh
-    docker compose --env-file .env.compose up -d --build --wait
+    ./scripts/compose-config.sh compose full up -d --build --wait
 
 # 停止整套服务（保留数据）
 stack-down:
-    docker compose --env-file .env.compose down
+    ./scripts/compose-config.sh compose full down
 
 # 停止并删除数据卷：会清空数据库与会话
 stack-reset:
-    docker compose --env-file .env.compose down -v
+    ./scripts/compose-config.sh compose full down -v
 
-# 看整套服务的日志（可加服务名，如 `just stack-logs backend`）
+# 看整套服务的日志（可加服务名，如 `just stack-logs accounts`）
 stack-logs *services:
-    docker compose --env-file .env.compose logs -f --tail=100 {{ services }}
+    ./scripts/compose-config.sh compose full logs -f --tail=100 {{ services }}
 
 # 对着正在运行的整套服务做冒烟测试：入口、登录与停用、伪造 IP 限流、备份恢复（先 `just stack-up`）
 stack-smoke:

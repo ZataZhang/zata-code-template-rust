@@ -1,10 +1,10 @@
 name: Release
 
 # 推送形如 v1.2.3 的 tag 时：构建三个镜像（后端、前台、管理后台）并推送到 GHCR，再创建 GitHub Release。
-# 镜像地址：ghcr.io/<owner>/<repo>-{backend,web,admin}，带版本号与 latest 两种 tag。
+# 镜像地址：ghcr.io/<owner>/<repo>-{accounts,web,admin}，带版本号与 latest 两种 tag。
 #
 # 这里**不重复跑测试**：发布用的 tag 应当打在已经通过 CI 的提交上（见下面的「CI 必须已通过」步骤，没通过会拒绝发布）。
-# 前台镜像的后端地址是构建参数（Next.js 把 rewrites 固化进产物）；默认值适用于 Compose 网络里叫 backend 的服务，
+# 前台镜像的账号服务地址是构建参数（Next.js 把 rewrites 固化进产物）；默认值适用于 Compose 网络里叫 accounts 的服务，
 # 别的部署方式请用 workflow_dispatch 手动指定 backend_url。
 
 on:
@@ -15,7 +15,7 @@ on:
     inputs:
       backend_url:
         description: "前台镜像的后端地址（构建参数 BACKEND_URL）"
-        default: "http://backend:8080"
+        default: "http://accounts:8080"
         required: false
 
 permissions:
@@ -65,9 +65,9 @@ jobs:
       fail-fast: false
       matrix:
         image:
-          - { name: backend, context: ".", build_args: "" }
-          - { name: web, context: frontend-public, build_args: "BACKEND_URL" }
-          - { name: admin, context: frontend-admin, build_args: "" }
+          - { name: accounts, context: ".", file: Dockerfile, build_args: "" }
+          - { name: web, context: ".", file: frontend-public/Dockerfile, build_args: "BACKEND_URL" }
+          - { name: admin, context: frontend-admin, file: Dockerfile, build_args: "" }
     steps:
       - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v3
@@ -92,13 +92,14 @@ jobs:
           BACKEND_URL_INPUT: ${{ inputs.backend_url }}
         run: |
           if [ "${{ matrix.image.build_args }}" = "BACKEND_URL" ]; then
-            echo "value=BACKEND_URL=${BACKEND_URL_INPUT:-http://backend:8080}" >> "$GITHUB_OUTPUT"
+            echo "value=BACKEND_URL=${BACKEND_URL_INPUT:-http://accounts:8080}" >> "$GITHUB_OUTPUT"
           else
             echo "value=" >> "$GITHUB_OUTPUT"
           fi
       - uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.image.context }}
+          file: ${{ matrix.image.file }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

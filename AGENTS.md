@@ -23,7 +23,7 @@
 | `docs/ai-standards/comments-docs.md` | 新增/修改公共 API；写 `///` / `//!`；使用 `#[allow]`；写 `unsafe` | 仅改私有实现细节且不涉及公共文档时 |
 | `docs/ai-standards/documentation.md` | 改动公共函数签名、配置项、业务流程；新增长期文档页 | 纯内部重构且无对外行为或文档变化 |
 | `docs/ai-standards/testing.md` | **任何代码变更开始前**；制定验证策略、收集证据或声称完成前必须重新核对；遇到测试失败时 | 仅改注释、纯文档排版或无可执行行为变化的纯配置 |
-| `docs/ai-standards/migrations.md` | 新增、修改 `migrations/` 下的迁移；写或改任何 SQL 查询；改动数据库表结构 | 不涉及数据库时 |
+| `docs/ai-standards/migrations.md` | 新增、修改任何服务的 `migrations/`；写或改任何 SQL 查询；改动数据库表结构 | 不涉及数据库时 |
 | `frontend-public/README.md`、`frontend-public/AGENTS.md` | 改动 `frontend-public/` 下任何内容；改动后端接口契约（字段、返回结构、错误码）；写前端代码前（Next.js 版本有破坏性变更，先读 `node_modules/next/dist/docs/`） | 只改后端内部实现、不影响接口契约时 |
 | `docs/guides/deployment.md`、`configuration.md`、`backup.md` | 改 `docker-compose.yml`、`deploy/`、Dockerfile、配置项、备份脚本、反向代理或限流相关的 IP 来源时 | 其他任务 |
 | `skills/prd/SKILL.md`、`docs/guides/prd-workflow.md` | 新增或执行 PRD（`tasks/pending/`）；改动 `tasks/` 下任何 PRD；提到「写 PRD」「按 PRD 实现」「归档」时 | 不涉及 PRD 时 |
@@ -33,8 +33,8 @@
 
 - 每次需求、方案与任务规划讨论默认评估 ROI，优先推荐最小有效方案；不为未提出的未来需求增加抽象。详见 `docs/ai-standards/index.md` 的「讨论与规划的 ROI 原则」。
 - 项目以 AI Agent 理解并执行指令为核心；不为追求 100% 规范遵守率而逐条增加程序校验或硬门禁。能由编译器或现有守卫测试强制的约束（`unsafe`、`missing_docs`、依赖方向）除外。详见 `docs/ai-standards/index.md` 的「Agent 指令与程序边界」。
-- 依赖方向（Cargo 挡住未声明的依赖，`crates/app/tests/architecture.rs` 检查已声明的依赖，违规则 `just test` 失败；约定本身变更时才改该测试的名单）：`tpl-api`、`tpl-engines`、`tpl-infrastructure` 只依赖 `tpl-core`；`tpl-core` 不依赖任何内部 crate；只有 `tpl-app`（composition root）依赖全部。**改任何 `Cargo.toml` 的依赖前先核对这条。**
-- 业务规则写在 `tpl-core`；`tpl-api` 只做参数校验、DTO 转换和调用用例；跨层协作一律经 core 里的端口（trait）。
+- 依赖方向（Cargo 拦截未声明的依赖，`services/accounts/tests/architecture.rs` 检查已声明的依赖，违规则 `just test` 失败）：账号私有层 `tpl-api`、`tpl-engines`、`tpl-infrastructure` 只依赖 `tpl-core`；`tpl-core` 不依赖内部 crate；只有 `tpl-accounts` 依赖这些账号层。后续业务服务不得依赖账号领域、仓储或迁移；确有跨服务复用需求时，先提取无业务归属的独立契约或平台 crate。**改任何 `Cargo.toml` 的依赖前先核对这条。**
+- 账号业务规则写在账号私有的 `tpl-core`；`tpl-api` 只做参数校验、DTO 转换和调用用例；跨层协作经由 core 端口（trait）。其他服务不要把账户私有层当通用库。
 - 使用 `cargo` 和 `just`。`just test` 是常规验证命令，任务要求运行时无需单独征求用户确认；提交前运行 `just ci`。
 - 内部注释、`///` 文档注释统一使用中文（专有名词除外）；公共项必须有文档（`missing_docs` 会警告，`just lint` 里警告即失败）。
 - 生产路径不用 `unwrap()` / `expect()`，用 `?` 返回有语义的错误；库层用 `thiserror`，`anyhow` 只用在 `main` 等应用入口。
@@ -42,7 +42,7 @@
 - 新增或修改代码前先搜索现有实现；禁止复制粘贴后微调，参数超过 4 个时收敛到结构体。
 - 前端（`frontend-public/`）是后端之外的独立 Next.js 项目，只通过 `/api/*` HTTP 与后端通信。改后端接口契约时必须同步改 `frontend-public/lib/api/` 并重跑 `just web-e2e`（前端类型是手写的，编译器发现不了契约漂移）；前端按错误**码**取翻译，不要依赖后端文案。
 - 管理后台（`frontend-admin/`）同理：改 `/admin/*` 契约时同步改 `frontend-admin/src/api/` 并重跑 `just web-e2e`；管理员域与普通用户域必须保持隔离（独立表、Cookie、Redis 键命名空间、限流前缀），不要为了复用把它们合并。
-- 限流依赖 TCP 对端地址：服务只能经 `tpl_app::server::serve` 启动；不要为了「方便」信任 `X-Forwarded-For`（默认关闭，开启条件见 `config.toml`）；Next.js 的 rewrites 不会写这个头，前台站点前面必须有会覆盖写它的 nginx（见 `docs/guides/deployment.md`）。
+- 限流依赖 TCP 对端地址：账号服务只能经 `tpl_accounts::server::serve` 启动；不要为了「方便」信任 `X-Forwarded-For`（默认关闭，开启条件见 `config.toml`）；完整站点必须由会覆盖写该头的 nginx 代理，独立开发模式只绑定回环地址并关闭该信任（见 `docs/guides/deployment.md`）。
 - 含密码的类型手写 `Debug`；日志与错误响应不得泄漏密钥、内部原因或连接串。
 - 外部输入必须有上限与超时（请求体大小、集合长度、外部调用超时）。
 - 除非用户明确要求，否则不要自动执行 `git add`、`git commit`、`git push` 等 Git 变更操作。

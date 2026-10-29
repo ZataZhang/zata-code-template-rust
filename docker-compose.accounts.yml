@@ -1,0 +1,8 @@
+# 独立运行账号服务时，用本机回环地址开放 API；此模式不信任 X-Forwarded-For。
+# 完整站点使用 docker-compose.yml，由 edge/admin nginx 覆盖写该头并保持 accounts 不对外发布。
+services:
+  accounts:
+    ports:
+      - "127.0.0.1:${ACCOUNTS_PORT:-8082}:8080"
+    environment:
+      APP_AUTH__TRUST_FORWARDED_FOR: "false"

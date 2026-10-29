@@ -16,7 +16,7 @@ use tpl_core::admin::AdminService;
 use tpl_core::auth::AuthService;
 use tpl_core::health::HealthService;
 
-/// 会话 Cookie 的属性，由 `tpl-app` 根据配置装配。
+/// 会话 Cookie 的属性，由账号服务根据配置装配。
 #[derive(Debug, Clone)]
 pub struct SessionCookieSettings {
     /// Cookie 名。
@@ -25,7 +25,7 @@ pub struct SessionCookieSettings {
     pub secure: bool,
 }
 
-/// 所有路由共享的应用状态，由 `tpl-app` 在启动时装配。
+/// 所有路由共享的应用状态，由账号服务在启动时装配。
 #[derive(Clone)]
 pub struct AppState {
     /// 健康检查用例。

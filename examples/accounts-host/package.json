@@ -1,0 +1,28 @@
+{
+  "name": "accounts-host-example",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.3.0",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc -b && vite build",
+    "typecheck": "tsc -b",
+    "preview": "vite preview --host 127.0.0.1",
+    "e2e": "node e2e/accounts-host.e2e.mjs"
+  },
+  "dependencies": {
+    "@tpl/accounts-ui": "file:../../packages/accounts-ui/tpl-accounts-ui-0.1.0.tgz",
+    "react": "19.2.4",
+    "react-dom": "19.2.4"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^6.0.1",
+    "@types/node": "^25.6.0",
+    "playwright-core": "^1.64.1",
+    "typescript": "~6.0.3",
+    "vite": "^8.0.8"
+  }
+}

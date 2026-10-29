@@ -1,60 +1,33 @@
-import { apiGet, apiPost } from "./client"
+import {
+  createAccountsClient,
+  PASSWORD_MAX_BYTES,
+  PASSWORD_MIN_CHARS,
+  type AccountCredentials,
+  type AccountSession,
+} from "@tpl/accounts-ui"
 
-/** 密码最少字符数。与后端 `tpl-core` 的规则保持一致。 */
-export const PASSWORD_MIN_CHARS = 8
+const accounts_client = createAccountsClient({ baseUrl: "/api" })
 
-/** 密码最大字节数（UTF-8）。与后端 `tpl-core` 的规则保持一致：超过会被拒绝。 */
-export const PASSWORD_MAX_BYTES = 128
+/** 密码最少字符数，由共享账号模块提供。 */
+export { PASSWORD_MAX_BYTES, PASSWORD_MIN_CHARS }
 
-/** Authenticated user returned by the auth API. */
-export type UserSession = {
-  id: number
-  email: string
-}
+/** 当前普通用户会话。 */
+export type UserSession = AccountSession
 
-/** 后端把用户包在 `user` 字段里返回：`{"user": {"id": 1, "email": "..."}}`。 */
-type SessionEnvelope = {
-  user: UserSession
-}
+/** 登录凭据。 */
+export type LoginCredentials = AccountCredentials
 
-/** Payload for user login. */
-export type LoginCredentials = {
-  email: string
-  password: string
-}
+/** 注册信息。 */
+export type RegisterPayload = AccountCredentials
 
-/** Payload for user registration. */
-export type RegisterPayload = {
-  email: string
-  password: string
-}
+/** 登录并返回当前用户会话。 */
+export const login = accounts_client.login
 
-/** Log in and return the current user session. */
-export async function login(credentials: LoginCredentials): Promise<UserSession> {
-  const { user } = await apiPost<SessionEnvelope>("/auth/login", credentials)
-  return user
-}
+/** 退出当前普通用户会话。 */
+export const logout = accounts_client.logout
 
-/** Log out the current user. */
-export async function logout(): Promise<void> {
-  await apiPost<void>("/auth/logout", {})
-}
+/** 查询当前普通用户会话。 */
+export const getCurrentSession = accounts_client.getCurrentSession
 
-/** Fetch the current user session, if logged in. */
-export async function getCurrentSession(): Promise<UserSession> {
-  const { user } = await apiGet<SessionEnvelope>("/auth/me")
-  return user
-}
-
-/**
- * Register a new user and sign them in.
- *
- * 后端注册接口不会自动登录，所以注册成功后紧接着登录一次，让用户直接进入应用。
- *
- * @param payload - Email and password for the new account.
- * @returns The signed-in user session.
- */
-export async function register(payload: RegisterPayload): Promise<UserSession> {
-  await apiPost<SessionEnvelope>("/auth/register", payload)
-  return login(payload)
-}
+/** 注册后立即登录并返回新用户会话。 */
+export const register = accounts_client.register

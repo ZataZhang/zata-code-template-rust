@@ -12,8 +12,8 @@ default_install_hook_types: [pre-commit, commit-msg]
 # 不检查：
 # - 依赖与构建产物
 # - 锁文件（工具生成，不应手工改）
-# - migrations/：sqlx 会记录每个已应用迁移的校验和，文件卫生类钩子改写它们会让迁移校验失败
-exclude: '^(frontend-[a-z]+/(node_modules|\.next)/|migrations/|.*pnpm-lock\.yaml$|Cargo\.lock$)'
+# - 任意服务的 migrations/：sqlx 会记录已应用迁移的校验和，文件卫生钩子改写会让校验失败
+exclude: '^(frontend-[a-z]+/(node_modules|\.next)/|.*(^|/)migrations/|.*pnpm-lock\.yaml$|Cargo\.lock$)'
 
 repos:
   # ==========================================
@@ -55,7 +55,7 @@ repos:
 
       - id: architecture-guard
         name: 层间依赖方向守卫测试（改了 Cargo.toml 时）
-        entry: cargo test -p tpl-app --test architecture
+        entry: cargo test -p tpl-accounts --test architecture
         language: system
         # clippy 拦不住「把违规依赖写进 Cargo.toml」，这个测试可以
         files: '(^|/)Cargo\.toml$'

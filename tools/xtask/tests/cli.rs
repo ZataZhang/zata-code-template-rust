@@ -354,7 +354,7 @@ fn archive_hook_gates_only_newly_archived_prds() {
 #[test]
 fn guard_test_hook_blocks_edits_to_marked_tests_unless_acknowledged() {
     let repo = init_repo();
-    let tests_dir = repo.main.join("crates/app/tests");
+    let tests_dir = repo.main.join("services/accounts/tests");
     fs::create_dir_all(&tests_dir).unwrap();
     fs::write(
         tests_dir.join("architecture.rs"),
@@ -372,7 +372,8 @@ fn guard_test_hook_blocks_edits_to_marked_tests_unless_acknowledged() {
     assert_eq!(code(&denied), 1);
     let message = String::from_utf8_lossy(&denied.stderr).into_owned();
     assert!(
-        message.contains("crates/app/tests/architecture.rs") && !message.contains("ordinary.rs"),
+        message.contains("services/accounts/tests/architecture.rs")
+            && !message.contains("ordinary.rs"),
         "{message}"
     );
 
@@ -386,7 +387,7 @@ fn guard_test_hook_blocks_edits_to_marked_tests_unless_acknowledged() {
 
     // 只改普通测试：放行。
     git(&repo.main, &["reset", "-q"]);
-    git(&repo.main, &["add", "crates/app/tests/ordinary.rs"]);
+    git(&repo.main, &["add", "services/accounts/tests/ordinary.rs"]);
     assert_eq!(code(&xtask(&repo.main, &["hook", "guard-tests"])), 0);
 }
 

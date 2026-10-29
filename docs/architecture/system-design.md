@@ -1,48 +1,54 @@
 # 系统架构
 
-本仓库遵循 **Clean Architecture 依赖方向 + 模块化单体** 的设计：一个仓库、一个部署单元（一个二进制），内部按层拆成多个 Cargo crate，层间边界有 Cargo 和守卫测试两道防线。模板刻意不内置业务域，业务模块由派生项目自行添加。
+本仓库提供一个可独立部署的 **账号业务服务**。当前发布的是一个业务服务，不代表已经拆出多个业务微服务。账号服务内部仍按 Clean Architecture 分层；下一项有独立数据归属和部署理由的业务模块应建立自己的服务入口和存储，不能依赖账号私有领域实现。
+
+Cargo workspace 是单仓管理多个独立产物的方式：`services/accounts` 是账号服务 composition root；当前 `crates/*` 都是账号服务私有实现。前后端可经同源 nginx 路由接入账号服务。跨应用复用有两种部署选择：每个应用独立部署账号服务并配置自己的数据库/Redis；或明确选择共享同一账号域。当前没有 `tenant_id` / `app_id` 隔离，不能把共享实例视为彼此隔离的多租户账号系统。
 
 ## 架构原则
 
 - **依赖向内**：外层可以依赖内层，内层不能反向依赖外层。最内层是 `tpl-core`。
-- **边界有两道防线**：依赖关系写在各 crate 的 `Cargo.toml`，没声明就无法 `use`（Cargo）；已声明的依赖由 `crates/app/tests/architecture.rs` 对照允许名单检查。只靠前者不够，因为违规依赖一旦写进 `Cargo.toml` 照样能编译。
+- **账号服务内部边界有两道防线**：依赖写在 Cargo.toml 里，没声明就无法 `use`（Cargo）；已声明的依赖由 `services/accounts/tests/architecture.rs` 对照允许名单检查。后续业务服务不得依赖这些账号私有 crate。
 - **端口与适配器**：core 只定义端口（trait）；基础设施与平台能力提供适配器（实现）；装配层把适配器接到用例上。
 - **按职责分层**：按变化率和业务边界分层，而不是按技术栈堆目录。
 - **可替换实现**：数据库、HTTP 客户端、日志、配置都在外层，core 只依赖接口。
 
 ## 分层
 
-### `tpl-api`（`crates/api`）请求接入层
+### 账号服务内部层
+
+这些 crate 属于账号服务内部实现，不是跨业务模块的共享 SDK。
+
+#### `tpl-api`（`crates/api`）请求接入层
 
 - 接收 HTTP（将来可有 WebSocket、CLI）请求
 - 只做参数校验、DTO 转换、调用用例；不写业务规则
 - 只依赖 `tpl-core`，因此碰不到数据库等具体实现
 - 响应里不暴露内部错误细节，原因写日志
 
-### `tpl-core`（`crates/core`）核心编排层
+#### `tpl-core`（`crates/core`）核心编排层
 
 - 放置用例、领域规则和端口（trait）：`health`（健康检查）、`auth`（注册、登录、会话、退出，及其端口 `UserRepository` / `SessionStore` / `PasswordHasher`）
 - 不依赖任何其他内部 crate，不依赖具体 SDK
 - `auth::testing` 提供端口的内存替身（`testing` feature），让 core 与 api 的测试不连外部服务
 - 公共签名里不出现 `sqlx::PgPool` 这类具体类型
 
-### `tpl-engines`（`crates/engines`）平台能力层
+#### `tpl-engines`（`crates/engines`）平台能力层
 
 - 放置可插拔的平台能力（检索、爬虫、OCR 等），实现 core 定义的端口
 - 模板里是空的，由派生项目添加
 
-### `tpl-infrastructure`（`crates/infrastructure`）基础设施层
+#### `tpl-infrastructure`（`crates/infrastructure`）基础设施层
 
 - 配置（`config.rs`）、日志（`logging.rs`）、PostgreSQL（`persistence.rs`：连接池、迁移、用户仓储、管理员仓储）、Redis（`redis_session.rs`：按命名空间隔离的会话存储）、密码哈希（`password.rs`：argon2id）
 - 实现 core 的端口，例如 `PostgresReadinessProbe` 实现 `ReadinessProbe`，`RedisSessionStore` 实现 `SessionStore`
 - 不依赖 `tpl-api`、`tpl-engines`
 
-### `tpl-app`（`crates/app`）装配层（composition root）
+### `tpl-accounts`（`services/accounts`）账号服务装配层（composition root）
 
 - `main.rs`：读配置 → 初始化日志 → 装配 → 启动 → 响应退出信号（薄薄一层）
 - `lib.rs` + `composition.rs`：根据配置构建 `AppState`，把具体实现接到用例上。做成库是为了让集成测试复用**真实的装配代码**
 - `shutdown.rs`：Ctrl+C / SIGTERM 优雅退出
-- 唯一允许依赖全部各层的地方；不承载业务规则
+- 账号服务唯一允许依赖全部内部层的地方；不承载业务规则
 
 ## 模块关系图
 
@@ -50,9 +56,9 @@
 flowchart TD
     Client["浏览器 / 负载均衡 / 探针"] -->|HTTP| Api
 
-    subgraph Workspace["Cargo workspace（crates/）"]
+    subgraph Workspace["账号服务：services/accounts + 私有 crates/*"]
         direction TB
-        App["tpl-app<br/>composition root"]
+        App["tpl-accounts<br/>accounts-service"]
         Api["tpl-api<br/>路由 · DTO"]
         Core["tpl-core<br/>用例 · 端口(trait)"]
         Engines["tpl-engines<br/>平台能力"]
@@ -79,7 +85,7 @@ flowchart TD
 4. 用例汇总成 `ReadinessReport`（core 的领域对象）返回
 5. 处理器把报告转成 DTO：全部通过返回 200，否则 503；失败原因只写日志，响应里只有 `ok` / `fail`
 
-处理器全程不知道 PostgreSQL 的存在；换成别的探针实现，api 与 core 一行不用改。这个探针是在 `tpl-app/composition.rs` 里接上的。
+处理器全程不知道 PostgreSQL 的存在；换成别的探针实现，api 与 core 一行不用改。这个探针是在 `services/accounts/src/composition.rs` 里接上的。
 
 ## 认证
 
@@ -114,7 +120,7 @@ flowchart TD
 
 **部署时必须注意**：
 
-- 服务必须通过 `server::serve` 启动（`main` 已是如此）：处理器靠它拿到 TCP 对端地址，漏掉不会报错，只会让按 IP 的限流悄悄失效；`tests/http_end_to_end.rs` 里有走真实 socket 的测试守着，并已用「去掉对端地址则测试失败」验证过它守得住。
+- 服务必须通过 `tpl_accounts::server::serve` 启动（`services/accounts/src/main.rs` 已是如此）：处理器靠它拿到 TCP 对端地址，漏掉不会报错，只会让按 IP 的限流悄悄失效；`services/accounts/tests/http_end_to_end.rs` 里有走真实 socket 的测试守着，并已用「去掉对端地址则测试失败」验证过它守得住。
 - 服务前面有反向代理时，对端地址永远是代理的地址：**不开 `trust_forwarded_for` 就会让所有用户共用同一个 IP 额度**；开了则必须保证外部无法绕过代理直连服务，且这层代理**必须覆盖写** `X-Forwarded-For`（只是透传的代理，比如 Next.js 的 rewrites，不满足）。
 
 ## 管理员与管理后台接口
@@ -139,53 +145,61 @@ flowchart TD
 
 ## 前端如何接入
 
-浏览器只和前台站点（`frontend-public`，Next.js）通信，`/api/*` 由 Next.js 的 rewrites 转发给后端：
+完整部署中，浏览器与前台站点同源访问，nginx 网关把 `/api/*` 转给独立账号服务。Next.js dev rewrites 仅用于本地开发：
 
 ```mermaid
 sequenceDiagram
     participant B as 浏览器
-    participant N as Next.js（前台站点）
-    participant R as Rust 后端
+    participant N as nginx 网关
+    participant W as Next.js（公开站点）
+    participant A as accounts-service
     B->>N: POST /api/auth/login（同源，带 Cookie）
-    N->>R: POST /auth/login（TCP 对端 = Next.js；X-Forwarded-For 原样透传，Next 不会追加）
-    R-->>N: 200 + Set-Cookie: session=…; HttpOnly; SameSite=Lax
-    N-->>B: 原样透传响应与 Set-Cookie
+    N->>A: POST /auth/login（nginx 覆盖写 X-Forwarded-For）
+    A-->>N: 200 + Set-Cookie: session=…; HttpOnly; SameSite=Lax
+    N-->>B: 原样转发响应与 Set-Cookie
+    N->>W: GET /login 等页面请求
+    W-->>N: 页面响应
 ```
 
 要点：
 
 - **同源**：浏览器看到的始终是前台站点的域名，所以 Cookie 是第一方的，`SameSite=Lax` 与「写接口只收 JSON」这套 CSRF 防护成立；不需要开放 CORS。
-- **后端地址在前端构建时固化**（`BACKEND_URL`，写进 `.next/routes-manifest.json`），运行时改环境变量无效。
-- **Next.js 的 rewrite 代理不会追加 `X-Forwarded-For`**（已读 Next 源码并用真实部署验证：客户端发来的头原样透传）。所以后端看到的 TCP 对端是 Next.js，不是用户；不开 `trust_forwarded_for` 时所有用户共用一个 IP 额度，而**直接暴露 Next.js 再开 `trust_forwarded_for`，攻击者每次换一个伪造 IP 就能绕过按 IP 的限流**。正确做法是在前面放一层自己的 nginx 来**覆盖写**这个头并把 `/api/` 直接转给后端（`docker-compose.yml` 里的 `edge`、`deploy/edge.nginx.conf`），详见 `docs/guides/deployment.md`。`just web-dev` 的开发模式不开 `trust_forwarded_for`，不受影响。
+- **公开站点后端地址在构建时固化**（保留的 `BACKEND_URL` 构建参数指向 accounts-service），运行时改环境变量无效。完整部署中由 `edge` 把 `/api/*` 直接转给账号服务；Next.js rewrite 仅供本地开发。
+- **Next.js rewrite 不会追加 `X-Forwarded-For`**，所以独立开发模式必须关闭 `trust_forwarded_for`。完整部署中 nginx 网关覆盖写该头并把 `/api/` 转给账号服务；账号服务不对外发布端口，外部无法绕过网关，详见 `docs/guides/deployment.md`。
 - 前端按后端返回的**错误码**（不是文案）取翻译，所以提示语言跟随界面语言；契约细节见 `frontend-public/README.md`。
+
+身份边界与其他应用的接入方式见 [`docs/guides/accounts-integration.md`](../guides/accounts-integration.md)：其他业务后端可将原始会话 Cookie 转发给账号服务的 `/auth/me` 验证后使用返回的用户 ID；不得信任浏览器自报的用户 ID，也不得直接访问账号 Redis 或数据库。当前不提供 JWT/OIDC。
 
 ## 配置
 
-- 优先级：代码默认值 < `config.toml` < 环境变量（`APP_<分区>__<字段>`，以及约定俗成的 `DATABASE_URL`、`REDIS_URL`）
-- 本地开发的环境变量与密钥放 `.env.local`（启动时自动加载，不提交）
-- 所有字段都有默认值：env 没填时配置加载也必须成功；未配置 `DATABASE_URL` / `REDIS_URL` 时不启用对应功能
+- 优先级：代码默认值 < `config.toml` < 可选 Nacos TOML < 环境变量（`APP_<分区>__<字段>`，以及约定俗成的 `DATABASE_URL`、`REDIS_URL`）
+- 本地开发可在 `.env.local` 配置 Nacos 连接参数；服务启动时读取 Nacos 配置，`.env.local` 本身不提交
+- Nacos 用户名/密码或访问令牌只作为本地引导凭据留在 `.env.local` 或部署密钥管理，不放进被读取的 Nacos 配置
+- 所有业务字段都有默认值：未启用 Nacos 且 env 没填时配置加载仍须成功；未配置 `DATABASE_URL` / `REDIS_URL` 时不启用对应功能
 - 含密码的类型手写 `Debug`，避免泄漏到日志
 
 ## 启动与运行
 
-- **启动时**：配置了 `DATABASE_URL` 就会执行数据库迁移（见 `docs/ai-standards/migrations.md`），所以要求数据库启动时可达，否则以非 0 退出（快速失败，交给编排平台重启）
+- **启动时**：配置了 `DATABASE_URL` 就会执行账号服务自己的迁移（见 `docs/ai-standards/migrations.md`），所以要求数据库启动时可达，否则以非 0 退出（快速失败，交给编排平台重启）
 - **运行中**：PostgreSQL 连接池和 Redis 连接都是**惰性重连**的：依赖短暂不可用时进程不会退出，`/ready` 如实报告 503，依赖恢复后自动变回 200，不需要重启进程
 - 探针：`/live`（进程存活，不查依赖）、`/health`（基本信息与版本）、`/ready`（依赖是否就绪）
 - 收到 SIGTERM / Ctrl+C 后先停止接收新连接，等在途请求处理完再退出
 
 ## 部署
 
-- 产物是一个二进制 `server`（`cargo build --release`）
+- 产物是一个二进制 `accounts-service`（`cargo build --release -p tpl-accounts --bin accounts-service`）
 - `Dockerfile` 多阶段构建：构建阶段编译，运行阶段只放二进制与 `config.toml`，非 root 用户运行
 - 容器里通过 `APP_SERVER__HOST=0.0.0.0` 监听所有网卡；其余配置用环境变量注入
 
-## 如何新增一项业务能力
+## 如何新增一项账号服务内能力
 
 1. 在 `tpl-core` 定义端口（trait）和用例，写单元测试（用替身实现端口）
 2. 在 `tpl-infrastructure` 或 `tpl-engines` 实现端口
 3. 在 `tpl-api` 加路由与 DTO，在 `crates/api/tests/` 加走完整路由的集成测试
-4. 在 `tpl-app/composition.rs` 接线
+4. 在 `services/accounts/src/composition.rs` 接线
 5. 运行 `just ci`，再用真实进程做一次 `curl` 冒烟
+
+新的业务模块不属于账号域时，建立独立服务目录、二进制、迁移和部署配置。不要依赖本节列出的账号私有 crate。共用身份时通过同源网关调用账号公开 API，并确认应用确实需要共享同一个账号集合；这不提供 tenant/app 隔离。
 
 ## 与 Python 版模板的差异
 

@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
-# crates/* 是后端的分层 crate；tools/* 是开发期工具（不进生产二进制，不参与分层依赖检查）
-members = ["crates/*", "tools/*"]
+# crates/* 是账号服务的内部层；services/* 是独立业务服务；tools/* 是开发期工具。
+members = ["crates/*", "services/*", "tools/*"]
 
 [workspace.package]
 version = "0.1.0"
@@ -11,7 +11,7 @@ publish = false
 
 # 依赖版本统一在这里声明，各 crate 用 `xxx.workspace = true` 引用，避免版本漂移。
 [workspace.dependencies]
-# 内部 crate（依赖方向见 docs/architecture/system-design.md，未声明的依赖编译器直接拒绝；声明本身由 crates/app/tests/architecture.rs 检查）
+# 账号服务内部 crate（依赖方向见 docs/architecture/system-design.md；声明的依赖由 services/accounts/tests/architecture.rs 检查）
 tpl-api = { path = "crates/api" }
 tpl-core = { path = "crates/core" }
 tpl-engines = { path = "crates/engines" }
@@ -31,11 +31,11 @@ http-body-util = "0.1"
 serde = { version = "1", features = ["derive"] }
 regex = "1"
 redis = { version = "1", default-features = false, features = ["tokio-comp", "connection-manager"] }
-reqwest = { version = "0.13", default-features = false, features = ["cookies", "json"] }
+reqwest = { version = "0.13", default-features = false, features = ["cookies", "default-tls", "form", "json", "query"] }
 serde_json = "1"
 sha2 = "0.11"
 # 生产 SQL 用 query! / query_as! 编译期校验；CI 与 Docker 使用仓库里的 .sqlx 离线元数据。
-# migrate! 宏也在编译期嵌入 migrations/ 目录里的 SQL 文件。
+# migrate! 宏也在编译期嵌入账号服务 services/accounts/migrations/ 目录里的 SQL 文件。
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "postgres", "migrate", "macros"] }
 thiserror = "2"
 tempfile = "3"

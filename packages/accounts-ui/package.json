@@ -1,0 +1,30 @@
+{
+  "name": "@tpl/accounts-ui",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Reusable React account registration and sign-in module for tpl accounts-service",
+  "type": "module",
+  "license": "UNLICENSED",
+  "files": ["dist", "README.md"],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./styles.css": "./dist/styles.css"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && node scripts/copy-styles.mjs",
+    "pack:tarball": "pnpm build && npm pack --pack-destination ."
+  },
+  "peerDependencies": {
+    "react": ">=18",
+    "react-dom": ">=18"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "typescript": "^5.9.0"
+  }
+}

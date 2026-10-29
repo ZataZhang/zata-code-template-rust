@@ -1,7 +1,7 @@
 //! 管理后台路由的 HTTP 行为测试：走完整的路由与中间件，存储、会话、哈希换成内存替身。
 //!
 //! 重点是隔离（两套 Cookie/会话互不通用）、认证门槛、停用立即生效，以及参数校验与限流。
-//! 真实 PostgreSQL/Redis 的端到端验证在 `tpl-app` 的 `tests/http_end_to_end.rs`。
+//! 真实 PostgreSQL/Redis 的端到端验证在 `services/accounts/tests/http_end_to_end.rs`。
 
 use std::sync::Arc;
 use std::time::Duration;

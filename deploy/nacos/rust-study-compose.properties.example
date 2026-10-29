@@ -1,8 +1,8 @@
-# 整套服务（docker-compose.yml）用的环境文件。
-# `just stack-up` 在 .env.compose 不存在时会基于本文件生成一份，并把留空的密钥换成随机值。
-# 生产环境请自己写一份，密钥交给部署平台的密钥管理，不要提交到 Git。
+# Nacos Data ID: rust-study-compose.properties
+# namespace、group 和应用/Compose Data ID 都由 config.toml 的 [nacos] 段定位。
+# 通过 Nacos 控制台或受控发布工具创建远端配置。不要把这里复制为本地部署环境文件。
 
-# 数据库与 Redis 密码（必填）。
+# 数据库与 Redis 密码（必填，迁移时保留现有值）。
 POSTGRES_PASSWORD=
 REDIS_PASSWORD=
 
@@ -17,7 +17,7 @@ COOKIE_SECURE=false
 # 默认只认直接连进来的对端地址。填错（比如填了 0.0.0.0/0）会让客户端能伪造来源 IP 绕过限流。
 TRUSTED_PROXY_CIDR=127.0.0.1
 
-# 宿主机上暴露的端口。
+# 宿主机上暴露的端口；COMPOSE_WEB_PORT/COMPOSE_ADMIN_PORT/COMPOSE_ACCOUNTS_PORT 可仅在隔离测试时覆盖。
 WEB_PORT=3000
 ADMIN_PORT=8081
 

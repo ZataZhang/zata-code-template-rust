@@ -83,6 +83,12 @@ jobs:
       - name: Check i18n message key alignment
         working-directory: .
         run: node scripts/check-i18n-keys.mjs
+      - name: Build reusable accounts UI package
+        working-directory: .
+        run: cd packages/accounts-ui && pnpm install --frozen-lockfile && pnpm pack:tarball
+      - name: Verify a separate host consumes the packed package
+        working-directory: .
+        run: cd examples/accounts-host && pnpm install --frozen-lockfile && pnpm typecheck && pnpm build
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm lint
@@ -164,21 +170,16 @@ jobs:
     name: Full stack (compose smoke test)
     needs: [rust, web, web-admin]
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@v7
-      - name: Start the full stack
-        run: |
-          ./scripts/stack-env.sh
-          docker compose --env-file .env.compose up -d --build --wait
-      - name: Smoke test
-        run: ./scripts/stack-smoke.sh
-      - name: Dump logs on failure
-        if: failure()
-        run: docker compose --env-file .env.compose logs --no-color --tail=200
-      - name: Tear down
-        if: always()
-        run: docker compose --env-file .env.compose down -v
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - name: Run isolated Nacos and Compose validation
+        run: python3 scripts/ci-nacos-stack.py
 
   # 三个镜像能构建出来（不推送）。
   docker:
@@ -187,9 +188,9 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
-      - name: Build backend image
-        run: docker build -t tpl-app:ci .
+      - name: Build accounts service image
+        run: docker build -t tpl-accounts:ci .
       - name: Build frontend image
-        run: docker build --build-arg BACKEND_URL=http://backend:8080 -t tpl-web:ci frontend-public
+        run: docker build -f frontend-public/Dockerfile --build-arg BACKEND_URL=http://accounts:8080 -t tpl-web:ci .
       - name: Build admin frontend image
         run: docker build -t tpl-admin:ci frontend-admin

@@ -15,7 +15,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use reqwest::{Client, StatusCode};
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
-use tpl_app::composition::build_app_state;
+use tpl_accounts::composition::build_app_state;
 use tpl_infrastructure::config::{DatabaseSettings, RedisSettings, Settings};
 
 /// 完整认证流程测试使用的 Redis 库。
@@ -42,7 +42,7 @@ async fn start_server(settings: &Settings) -> RunningServer {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     tokio::spawn(async move {
-        tpl_app::server::serve(listener, router, std::future::pending())
+        tpl_accounts::server::serve(listener, router, std::future::pending())
             .await
             .unwrap();
     });

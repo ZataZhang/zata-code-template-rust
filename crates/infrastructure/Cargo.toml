@@ -15,7 +15,9 @@ dotenvy.workspace = true
 figment.workspace = true
 getrandom.workspace = true
 redis.workspace = true
+reqwest.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 sha2.workspace = true
 sqlx.workspace = true
 thiserror.workspace = true
@@ -24,8 +26,8 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 
 [dev-dependencies]
-# Jail 能在测试里安全地隔离环境变量与当前目录。
 figment = { workspace = true, features = ["test"] }
+tempfile.workspace = true
 
 [lints]
 workspace = true

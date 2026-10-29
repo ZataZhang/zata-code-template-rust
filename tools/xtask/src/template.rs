@@ -114,6 +114,7 @@ fn is_excluded_from_copy(relative_path: &Path) -> bool {
                 | ".ruff_cache"
                 | "logs"
                 | "backups"
+                | ".artifacts"
                 | ".claude"
                 | ".codex"
                 | ".agents"
@@ -131,6 +132,7 @@ fn is_excluded_from_copy(relative_path: &Path) -> bool {
     let file_name = relative_path.file_name().and_then(|name| name.to_str());
     file_name.is_some_and(|name| {
         (name.starts_with(".env") && !name.ends_with(".example"))
+            || name.ends_with(".tgz")
             || name.ends_with(".log")
             || name.ends_with(".swp")
             || name.ends_with(".db")
@@ -446,6 +448,8 @@ mod tests {
             ".vscode/settings.json",
             ".idea/workspace.xml",
             "logs/app.log",
+            "packages/accounts-ui/tpl-accounts-ui-0.1.0.tgz",
+            ".artifacts/accounts-host/host-bundle.tgz",
             "state/test.db",
             "state/test.db-journal",
             "editor/file.swp",

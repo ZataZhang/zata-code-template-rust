@@ -18,7 +18,7 @@
 |---|---|
 | unit | 与代码同文件的 `#[cfg(test)] mod tests`：纯逻辑、边界、错误分支；用 `tpl-core` 的内存替身（`auth::testing`）代替端口实现 |
 | integration | `crates/<name>/tests/*.rs`：走完整路由与中间件，替换掉慢/贵/不稳定的依赖（如 `crates/api/tests/auth_routes.rs`） |
-| real entry | 真实进程：`just run` 后用 `curl` 打接口；真实 socket + 真实 PostgreSQL/Redis 的自动化测试是 `crates/app/tests/http_end_to_end.rs`（`just test real`） |
+| real entry | 账号服务真实进程：`just run backend` 或独立容器 `just accounts-up` 后用 `curl`；本地全栈 URL 由 `just run` 打印；真实 socket + 真实 PostgreSQL/Redis 的自动化测试在 `services/accounts/tests/http_end_to_end.rs`（`just test real`） |
 | user flow | 真实浏览器：`just web-e2e`（`frontend-public/e2e/`、`frontend-admin/e2e/`），起真实的数据库、后端、前端，用 Chrome 走完用户可见的流程 |
 | live | 仅在外部服务行为无法用本地替身证明时使用，且必须显式 opt-in |
 
@@ -77,7 +77,7 @@
 
 ## 守卫测试（Guard Tests）
 
-守卫测试断言**仓库自身的约定**没被破坏（而不是业务逻辑）。本仓库目前只有一个：`crates/app/tests/architecture.rs`（层间依赖方向）；lint 由 clippy 强制。新增守卫测试时遵循：
+守卫测试断言**仓库自身的约定**没被破坏（而不是业务逻辑）。本仓库目前只有一个：`services/accounts/tests/architecture.rs`（账号服务内部层依赖方向）；lint 由 clippy 强制。新增守卫测试时遵循：
 
 - 守卫测试失败时，**修复触发它的源码或配置，不要改守卫测试本身让它通过**；仅当约定本身变更时才改它，并同步更新对应文档
 - 每个守卫测试文件头标注「守卫测试（guard test）」，让 AI 代理第一眼识别「这是规则本身」

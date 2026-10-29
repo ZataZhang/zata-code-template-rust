@@ -1,7 +1,7 @@
 # 管理后台前端
 
 本目录是管理后台（Vite + React 19 + TanStack Router + Tailwind v4 + shadcn/ui），基于
-[satnaing/shadcn-admin](https://github.com/satnaing/shadcn-admin) 精简而来。它是**独立的 pnpm 项目**，只通过 `/api/*` HTTP 与 Rust 后端通信。
+[satnaing/shadcn-admin](https://github.com/satnaing/shadcn-admin) 精简而来。它是**独立的 pnpm 项目**，只通过 `/api/*` HTTP 与 accounts-service 通信。
 
 目前只有两个页面：管理员登录、用户管理（搜索、状态筛选、分页、启用/停用）。**只保留有真实后端支撑的页面**——新增页面应当先有后端接口，不要把演示页面加回来。
 
@@ -10,7 +10,7 @@
 ```bash
 # 仓库根目录
 just web-admin-install   # 首次：按 pnpm-lock.yaml 安装依赖
-just run                 # 另开终端：后端（需要 DATABASE_URL、REDIS_URL 以及引导管理员）
+just accounts-up         # 另开终端：启动账号服务（需要 DATABASE_URL、REDIS_URL 以及引导管理员）
 just web-admin-dev       # 打开 http://localhost:5173
 ```
 
@@ -20,7 +20,7 @@ just web-admin-dev       # 打开 http://localhost:5173
 export ADMIN_BOOTSTRAP_USERNAME=admin ADMIN_BOOTSTRAP_PASSWORD='至少8位的初始密码'
 ```
 
-开发服务器把 `/api/*` 代理到 `http://localhost:8080`（`BACKEND_PORT` 可改，`FRONTEND_ADMIN_PORT` 改本站端口）。
+开发服务器把 `/api/*` 代理到 `http://localhost:8080` 的账号服务（`BACKEND_PORT` 可改，`FRONTEND_ADMIN_PORT` 改本站端口）。
 
 ## 检查与测试
 
@@ -56,9 +56,9 @@ frontend-admin/
 
 ```bash
 just web-admin-docker-build
-docker run -p 8081:80 -e BACKEND_UPSTREAM=backend:8080 tpl-admin:local
+docker run -p 8081:80 -e BACKEND_UPSTREAM=accounts:8080 tpl-admin:local
 ```
 
-镜像用 nginx 托管静态产物，`/api/*` 由 nginx 反向代理到 `BACKEND_UPSTREAM`（运行时环境变量，默认 `backend:8080`），所以后端不需要开放 CORS。
+镜像用 nginx 托管静态产物，`/api/*` 由 nginx 反向代理到 `BACKEND_UPSTREAM`（运行时环境变量，默认 `accounts:8080`），所以账号服务不需要开放 CORS。
 
 **注意**：后端默认只信任 TCP 对端地址做限流，经过这个代理后它看到的是 nginx 的地址，所有管理员会共用同一个 IP 额度。部署在代理之后时要设置 `APP_AUTH__TRUST_FORWARDED_FOR=true`，并确保后端不能被绕过直连。生产环境（HTTPS）必须设置 `APP_AUTH__COOKIE_SECURE=true`（管理员 Cookie 沿用这个开关）。

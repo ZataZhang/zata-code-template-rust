@@ -4,13 +4,13 @@
 //! 业务规则不写在这里。
 
 use anyhow::Context;
-use tpl_app::{composition, server, shutdown};
+use tpl_accounts::{composition, server, shutdown};
 use tpl_infrastructure::config::Settings;
 use tpl_infrastructure::logging;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let settings = Settings::load()?;
+    let settings = Settings::load().await?;
     logging::init(&settings.logging);
 
     let app_state = composition::build_app_state(&settings).await?;

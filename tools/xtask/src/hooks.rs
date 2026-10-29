@@ -441,7 +441,7 @@ mod tests {
 
     #[test]
     fn guard_decision_requires_an_explicit_acknowledgement() {
-        let changed = vec!["crates/app/tests/architecture.rs".to_string()];
+        let changed = vec!["services/accounts/tests/architecture.rs".to_string()];
         assert_eq!(decide_guard(vec![], false), GuardDecision::NothingGuarded);
         assert_eq!(decide_guard(vec![], true), GuardDecision::NothingGuarded);
         assert_eq!(

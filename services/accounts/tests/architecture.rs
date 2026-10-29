@@ -6,7 +6,8 @@
 //! 失败时：修复触发它的 `Cargo.toml`，不要改本测试让它通过。只有当架构约定本身变更时才改
 //! 下面的名单，并同步更新 `docs/ai-standards/architecture.md`。
 //!
-//! 层以**目录名**识别（`crates/api` → `api`），所以给 crate 改名（如去掉 `tpl-` 前缀）不影响本测试。
+//! 内部层与服务根按目录名识别（`crates/api` → `api`、`services/accounts` → `accounts`），
+//! 所以给 package 改名（如去掉 `tpl-` 前缀）不影响本测试。
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -20,7 +21,7 @@ const ALLOWED_LAYER_DEPENDENCIES: &[(&str, &[&str])] = &[
     ("api", &["core"]),
     ("engines", &["core"]),
     ("infrastructure", &["core"]),
-    ("app", &["api", "core", "engines", "infrastructure"]),
+    ("accounts", &["api", "core", "engines", "infrastructure"]),
 ];
 
 /// 某一层实际声明的内部依赖（含 dev / build 依赖）。
@@ -81,8 +82,8 @@ fn read_declared_dependencies() -> Vec<LayerDependencies> {
     );
     let metadata: Value =
         serde_json::from_slice(&output.stdout).expect("cargo metadata 输出不是 JSON");
-    // 只看 `crates/` 下的包：它们才是后端的分层。`tools/` 下的开发期工具（xtask）不是分层，
-    // 不进生产二进制，也不参与依赖方向检查。
+    // 只看 `crates/` 下的内部层与 `services/` 下的业务服务。`tools/` 下的开发期工具（xtask）
+    // 不进生产服务，也不参与依赖方向检查。
     let packages: Vec<&Value> = metadata["packages"]
         .as_array()
         .expect("缺少 packages")
@@ -90,11 +91,13 @@ fn read_declared_dependencies() -> Vec<LayerDependencies> {
         .filter(|package| {
             package["manifest_path"]
                 .as_str()
-                .map(Path::new)
-                .and_then(Path::parent)
-                .and_then(Path::parent)
-                .and_then(Path::file_name)
-                .is_some_and(|name| name == "crates")
+                .is_some_and(|manifest_path| {
+                    Path::new(manifest_path)
+                        .parent()
+                        .and_then(Path::parent)
+                        .and_then(Path::file_name)
+                        .is_some_and(|name| matches!(name.to_str(), Some("crates" | "services")))
+                })
         })
         .collect();
 
@@ -157,7 +160,7 @@ fn checker_rejects_forbidden_and_unregistered_dependencies() {
         layer("api", &["core", "infrastructure"]), // 接入层越过 core 直接依赖基础设施
         layer("engines", &["core"]),
         layer("infrastructure", &["core"]),
-        layer("app", &["api", "core", "engines", "infrastructure"]),
+        layer("accounts", &["api", "core", "engines", "infrastructure"]),
         layer("billing", &["core"]), // 未登记的新层
     ];
 
