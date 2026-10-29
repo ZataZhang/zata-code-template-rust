@@ -87,6 +87,7 @@ producer 可以在 Run 仍运行时反复 flush。序号从 1 开始，同一批
 默认配置文件为本目录的 `config.toml`；密钥通过 `APP_*` 环境变量注入，不写回 TOML：
 
 ```bash
+APP_CONFIG_FILE=services/agent-tracing/config.toml \
 APP_DATABASE__URL='postgres://agent_tracing:…@127.0.0.1:5434/agent_tracing' \
 APP_ACCOUNTS__ADMIN_AUTH_URL='http://127.0.0.1:8080/admin/auth/me' \
 SQLX_OFFLINE=true cargo run -p tpl-agent-tracing --bin agent-tracing-service

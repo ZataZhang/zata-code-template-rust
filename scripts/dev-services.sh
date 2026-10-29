@@ -286,6 +286,7 @@ select_services() {
             start_accounts_host="true"
             ;;
         tracing)
+            start_backend="true"
             start_tracing_backend="true"
             start_frontend_tracing="true"
             ;;
@@ -415,6 +416,7 @@ start_tracing_backend() {
     echo "Starting Rust agent-tracing service on 127.0.0.1:$tracing_backend_port"
     (
         cd "$repo_root"
+        export APP_CONFIG_FILE="$repo_root/services/agent-tracing/config.toml"
         export APP_SERVER__HOST=127.0.0.1
         export APP_SERVER__PORT="$tracing_backend_port"
         export APP_DATABASE__URL="$database_url"

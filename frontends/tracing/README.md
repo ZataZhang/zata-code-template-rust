@@ -9,7 +9,7 @@ just db-up
 just run tracing
 ```
 
-默认界面地址是 `http://127.0.0.1:5174`。开发代理将 `/api/admin/auth/*` 转给 accounts，管理员轨迹查询转给 agent-tracing；producer 接入路径 `/api/v1/ingest/*` 保留 API 前缀。
+`just run tracing` 会启动 accounts API（供管理员登录）、tracing API 和 Vite UI。默认界面地址是 `http://127.0.0.1:5174`。开发代理将 `/api/admin/auth/*` 转给 accounts，管理员轨迹查询转给 agent-tracing；producer 接入路径 `/api/v1/ingest/*` 保留 API 前缀。
 
 单独启动 UI：
 
