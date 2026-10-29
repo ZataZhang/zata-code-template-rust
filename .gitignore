@@ -9,6 +9,8 @@
 node_modules/
 .next/
 *.tsbuildinfo
+**/.vite/
+/frontends/tracing/dist/
 
 # 日志
 logs/
