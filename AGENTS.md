@@ -56,6 +56,7 @@
 - 验证措辞要如实：没执行的验证写 `not run`；只验证到某一层就写那一层，不要把「单元测试通过」写成「端到端通过」。缺凭据或缺外部服务时停下来报告，不要用替身顶上去宣称完成了真实入口验证。
 - 变更代码时同步更新 `docs/`、`///` 文档注释、`config.toml` 与 `.env.example`。
 - 新增给密钥类的配置变量放到 `config.toml`，实际密钥值由 `.env.local` / 环境变量注入；默认 env 未填写时，配置加载仍须正常完成。`.env.example` 里默认必填的变量保持未注释，可选的保持注释，密钥值始终留空。
+- 本仓库原生启动服务时默认从 Nacos 应用 TOML 读取数据库和 Redis 配置；`.env.local` 只提供 Nacos 地址与认证信息。启动命令不要主动内联 `DATABASE_URL` / `REDIS_URL` 覆盖 Nacos，除非用户明确要求覆盖或切换到本地测试依赖。详见 `docs/guides/configuration.md`。
 - 迁移状态与尚未迁移的内容见 `docs/migration-status.md`。
 
 ## Maintenance Rule
