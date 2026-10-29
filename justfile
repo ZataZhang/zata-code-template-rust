@@ -23,6 +23,14 @@ run target="all":
 down target="all":
     "{{justfile_directory()}}/scripts/dev-services.sh" down "{{ target }}"
 
+# 打开本机文件与 Git 改动查看器；默认进入改动视图
+view *args:
+    cargo xtask view {{ args }}
+
+# 直接打开改动视图，与 `just view --diff` 等价
+diff *args:
+    cargo xtask view --diff {{ args }}
+
 # 发布构建（带优化，账号服务产物在 target/release/accounts-service）
 build:
     cargo build --workspace --release

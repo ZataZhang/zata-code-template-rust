@@ -1,6 +1,6 @@
 [package]
 name = "xtask"
-description = "开发期工具：PRD 工具链（契约解析、归档门禁、执行锁、状态看板）与提交钩子的检查。不进生产二进制。"
+description = "开发期工具：PRD 工具链、提交钩子检查、本机文件与 Git 改动查看器。不进生产二进制。"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,13 +8,17 @@ publish.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+axum.workspace = true
 clap.workspace = true
 gethostname.workspace = true
 regex.workspace = true
+pulldown-cmark.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+syntect.workspace = true
 tempfile.workspace = true
 time = { workspace = true, features = ["formatting", "parsing", "macros"] }
+tokio.workspace = true
 unicode-width.workspace = true
 
 [lints]

@@ -13,7 +13,7 @@ default_install_hook_types: [pre-commit, commit-msg]
 # - 依赖与构建产物
 # - 锁文件（工具生成，不应手工改）
 # - 任意服务的 migrations/：sqlx 会记录已应用迁移的校验和，文件卫生钩子改写会让校验失败
-exclude: '^(frontend-[a-z]+/(node_modules|\.next)/|.*(^|/)migrations/|.*pnpm-lock\.yaml$|Cargo\.lock$)'
+exclude: '^(frontend-[a-z]+/(node_modules|\.next)/|.*(^|/)migrations/|.*pnpm-lock\.yaml$|Cargo\.lock$|scripts/view/assets/mermaid\.min\.js$)'
 
 repos:
   # ==========================================

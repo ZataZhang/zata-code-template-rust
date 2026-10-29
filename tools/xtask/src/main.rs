@@ -9,9 +9,10 @@
 //! cargo xtask prd release <prd> [--force]                    释放
 //! cargo xtask prd check <prd>... [--structure-only | --archive-ready]
 //! cargo xtask prd review <prd> [--print]                     打开人工审查清单
+//! cargo xtask view [path] [--files|--diff]                   本机文件与改动查看器
 //! ```
 //!
-//! 日常通过 `just prd ...` 调用；`hook ...` 子命令由 pre-commit 钩子调用。
+//! 日常通过 `just prd ...`、`just view` 调用；`hook ...` 子命令由 pre-commit 钩子调用。
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -21,11 +22,12 @@ use xtask::commands::{self, CheckOptions};
 use xtask::hooks::MaxLinesOptions;
 use xtask::prd::status::Scope;
 use xtask::template::{DEFAULT_UPSTREAM, copy_template, sync_template};
+use xtask::view::{self, LaunchOptions};
 
 #[derive(Parser)]
 #[command(
     name = "xtask",
-    about = "本仓库的开发期工具：PRD 工具链与提交钩子的检查"
+    about = "本仓库的开发期工具：PRD、提交钩子检查和本机文件查看器"
 )]
 enum Cli {
     /// PRD 工具链：状态看板、执行锁、门禁、审查入口
@@ -42,6 +44,45 @@ enum Cli {
     Template {
         #[command(subcommand)]
         command: TemplateCommand,
+    },
+    /// 本机文件与 Git 改动查看器
+    View {
+        /// 打开后直达的仓库相对路径
+        path: Option<String>,
+        /// 进入文件视图
+        #[arg(long, conflicts_with = "diff")]
+        files: bool,
+        /// 进入改动视图（默认）
+        #[arg(long)]
+        diff: bool,
+        /// 指定监听端口
+        #[arg(long)]
+        port: Option<u16>,
+        /// 空闲回收时间（秒），0 表示关闭
+        #[arg(long)]
+        idle_timeout: Option<f64>,
+        /// 强制新起实例，不复用已有实例
+        #[arg(long)]
+        no_reuse: bool,
+        /// 只打印 URL，不打开浏览器
+        #[arg(long)]
+        no_open: bool,
+        /// 停止本仓库的查看器实例
+        #[arg(long)]
+        stop: bool,
+    },
+    /// 查看器内部服务入口
+    #[command(hide = true)]
+    ViewServer {
+        /// 被查看仓库根目录
+        #[arg(long)]
+        repo_root: PathBuf,
+        /// 监听端口
+        #[arg(long)]
+        port: u16,
+        /// 空闲回收时间（秒），0 表示关闭
+        #[arg(long)]
+        idle_timeout: f64,
     },
 }
 
@@ -239,6 +280,29 @@ fn main() -> ExitCode {
                 apply,
             } => sync_template(&upstream, list, apply),
         },
+        Cli::View {
+            path,
+            files,
+            diff: _,
+            port,
+            idle_timeout,
+            no_reuse,
+            no_open,
+            stop,
+        } => view::launch(LaunchOptions {
+            path: path.unwrap_or_default(),
+            files,
+            port,
+            idle_timeout_seconds: idle_timeout,
+            no_reuse,
+            no_open,
+            stop,
+        }),
+        Cli::ViewServer {
+            repo_root,
+            port,
+            idle_timeout,
+        } => view::run_server(repo_root, port, idle_timeout),
     };
     ExitCode::from(u8::try_from(code).unwrap_or(1))
 }
