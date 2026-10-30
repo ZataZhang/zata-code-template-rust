@@ -338,7 +338,7 @@ No new prototype file changes in this PRD; the adjacent `ai-assistant` prototype
   - none
 - Gate type: none
 - Sequence: via-main
-- Notes: 无现存 pending PRD 或服务依赖。用户已于 2026-10-29 确认 §1 解读及 §2 三项决策；开始实现前仍须运行 `just prd start` 领取执行锁。
+- Notes: 无现存 pending PRD 或服务依赖。用户已于 2026-10-29 确认 §1 解读及 §2 三项决策；开始实现前须由 kc 建 issue 并认领（`kc issue create tasks/pending/P1-FEAT-20261029-150130-agent-tracing-services.md`），不需要 `just prd start` 的执行锁。
 
 ## 9. Acceptance Checklist
 
@@ -381,7 +381,7 @@ No new prototype file changes in this PRD; the adjacent `ai-assistant` prototype
 
 #### Delivery Readiness
 
-- [ ] executor 完成 AI 编码自检、文档/配置同步、Final Reconciliation；若 PRD 进入实现，先运行 `just prd start P1-FEAT-20261029-150130-agent-tracing-services.md` 并遵守执行锁。
+- [ ] executor 完成 AI 编码自检、文档/配置同步、Final Reconciliation；若 PRD 进入实现，先由 kc 建 issue 认领（`kc issue create tasks/pending/P1-FEAT-20261029-150130-agent-tracing-services.md`），无需领取 `just prd start` 执行锁。
 - [ ] Human-Confirmed 空框保持未勾并配 `🧍 待人工验收` 横幅；只有人工确认后才能勾选。
 
 ## 10. Functional Requirements

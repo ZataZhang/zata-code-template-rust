@@ -91,8 +91,8 @@ ci: lint test doc
 # PRD 工具链（Rust 实现，源码在 tools/xtask；流程见 docs/guides/prd-workflow.md）。
 # 子命令：status / start / heartbeat / release / check / review，例如：
 #   just prd status --detail
-#   just prd start <prd> --tool claude
 #   just prd check <prd> --structure-only
+# 注意：PRD 的执行权归 kc（issue lifecycle）；start / heartbeat / release 只在人工直跑时使用。
 # PRD 工具链：status / start / heartbeat / release / check / review（用法见上方注释）
 prd *args:
     cargo xtask prd {{ args }}

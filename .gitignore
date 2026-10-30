@@ -40,3 +40,17 @@ tasks/evidence/**
 # 整套服务的环境文件（含随机生成的密钥）与数据库备份
 .env.compose
 backups/
+
+# >>> kc (managed by `kc init`) >>>
+# KedaCode runner state (worktree-local)
+.kedacode/
+
+# Agent runner state (worktree-local)
+.agent-runner/
+
+# KedaCode-managed git worktrees (host-local)
+.kc-worktrees/
+
+# kc 初始化时的配置写入锁，不入库
+.kedacode.toml.lock
+# <<< kc <<<

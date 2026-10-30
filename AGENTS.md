@@ -48,8 +48,8 @@
 - 除非用户明确要求，否则不要自动执行 `git add`、`git commit`、`git push` 等 Git 变更操作。
 - 提交信息统一用英文并遵循 Conventional Commits（`type(scope): subject`，标题 ≤ 72 字符，正文解释 why），详见 `docs/ai-standards/tooling.md`。
 - 单代码文件非空行不超过 1000 行（目标 500 行以内）。
-- 执行 `tasks/pending/` 下任何 PRD 前先 `just prd start <prd-file>` 领取执行锁（知道工具名就 `--tool` 自报）；若报告他人新鲜锁，**立即停止并向用户报告持锁者**，不要继续实现，也不要自行 `release --force`。长任务定期 `just prd heartbeat <prd-file>`。详见 `docs/guides/prd-workflow.md`。
-- PRD 对应任务全部完成后：先 `just prd check --archive-ready <prd-file>` 通过，再把 PRD 从 `tasks/pending/` 移到 `tasks/archive/`。**归档只代表执行侧交付完成，不等人工验收**：`Human-Confirmed` 空框带着 `🧍 待人工验收` 横幅归档，只有人能勾选它们、把横幅改成 `✅ 已验收`；执行方不得代勾，也不得把它们改写成 `[~]`。
+- PRD 执行权归 KedaCode（kc）：`kc issue create tasks/pending/<prd-file>` 建 issue 并排队，由 runner 认领实现，closeout 门禁通过后把 PRD `git mv` 到 `tasks/archive/`。经 kc 执行时**不要**另行领锁。`just prd start/heartbeat/release` 只用于**人工直跑**（不经 kc 的流程）互斥：此时若报告他人新鲜锁，**立即停止并向用户报告持锁者**，不要继续实现，也不要自行 `release --force`。详见 `docs/guides/prd-workflow.md`。
+- PRD 对应任务全部完成后归档：经 kc 执行的以 closeout 门禁为准，由 kc 完成归档移动；人工直跑的先用 `just prd check --archive-ready <prd-file>` 通过，再把 PRD 从 `tasks/pending/` 移到 `tasks/archive/`。**归档只代表执行侧交付完成，不等人工验收**：`Human-Confirmed` 空框带着 `🧍 待人工验收` 横幅归档，只有人能勾选它们、把横幅改成 `✅ 已验收`；执行方不得代勾，也不得把它们改写成 `[~]`。
 - 随手想法先落 `tasks/inbox/`：只在**想法边界**捕获（用户明确要求，或话题收敛到可开 PRD 的状态），条目 = 用户原话逐字**引用** + 标注为 `AI 派生` 的背景块，**只追加**到 `tasks/inbox/ideas.md`（禁止改写已有条目）；AI 维护 `tasks/inbox/summary.md` 做总结。详见 `docs/guides/idea-inbox.md`。
 - 禁止为了可测性修改生产代码：不得为了让测试或负控能变红而往生产代码里加故障注入开关、失败模式、test-only 配置项、计数器或观测钩子；无法变红时记 `negative_control: not feasible — <原因>`。
 - 守卫测试（如将来新增）失败时，修复触发它的源码或配置，不要修改守卫测试本身让测试通过；仅当约定本身变更时才改守卫测试，并同步更新对应文档。

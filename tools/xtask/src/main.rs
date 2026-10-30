@@ -4,9 +4,9 @@
 //!
 //! ```text
 //! cargo xtask prd status [all|pending|archive] [--detail]   PRD 状态看板
-//! cargo xtask prd start <prd> [--tool 名称]                  领取 PRD 执行锁
-//! cargo xtask prd heartbeat <prd>                            续期
-//! cargo xtask prd release <prd> [--force]                    释放
+//! cargo xtask prd start <prd> [--tool 名称]                  领取 PRD 执行锁（仅人工直跑）
+//! cargo xtask prd heartbeat <prd>                            续期（仅人工直跑）
+//! cargo xtask prd release <prd> [--force]                    释放（仅人工直跑）
 //! cargo xtask prd check <prd>... [--structure-only | --archive-ready]
 //! cargo xtask prd review <prd> [--print]                     打开人工审查清单
 //! cargo xtask view [path] [--files|--diff]                   本机文件与改动查看器

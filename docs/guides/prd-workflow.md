@@ -12,11 +12,13 @@ PRD（产品需求文档）是本项目里**较大改动**的计划载体：先�
 tasks/inbox/      想法（原话 + AI 背景，只追加）
       │ 想法成熟
       ▼
-tasks/pending/    PRD：写计划 → 领锁 → 实现 → 收集证据
-      │ 执行侧全部交付（verifier 通过、对账完成）
+tasks/pending/    PRD：写计划 → kc 建 issue 并认领 → 实现 → 收集证据
+      │ 执行侧全部交付（verifier 通过、对账完成；kc closeout 门禁通过后 git mv）
       ▼
 tasks/archive/    执行侧已交付；横幅 🧍 待人工验收 → ✅ 已验收
 ```
+
+**执行权归 KedaCode（kc）**：PRD 的开工、认领与归档由 kc 的 issue 生命周期负责（`kc issue create` → runner 认领 → closeout 归档）。本页的 `just prd` 工具是**人工直跑**时的旁路，不是 agent 的正常入口；两套不要同时用——经 kc 执行时不要再领锁，否则同一个 PRD 会出现两个 owner。
 
 两条轴相互正交，别混为一谈：
 
@@ -29,12 +31,13 @@ tasks/archive/    执行侧已交付；横幅 🧍 待人工验收 → ✅ 已�
 # 1. 写 PRD：用 PRD skill 生成到 tasks/pending/，文件名 P<优先级>-<类型>-<日期>-<时间>-<slug>.md
 just prd check --structure-only tasks/pending/<prd>.md     # 新写出来的 PRD 先过结构检查
 
-# 2. 开工前领锁（防止两个会话同时做同一件事）
-just prd start <prd> --tool claude
-just prd status                                            # 随时看全局：进度、依赖、谁在做
+# 2. 开工：交给 kc（正常路径）
+kc issue create tasks/pending/<prd>.md                     # 建 issue 并把 PRD 链接写回文件
+just prd status                                            # 只读看板：进度、依赖、验收横幅
 
-# 3. 实现。长任务每隔一段时间续期
-just prd heartbeat <prd>
+#    人工直跑（不经 kc）才需要互斥锁
+just prd start <prd> --tool claude
+just prd heartbeat <prd>                                   # 长任务续期
 
 # 4. 交付：把验收清单勾完、写最终对账、横幅改成 🧍 待人工验收，再检查并移到 archive
 just prd check --archive-ready tasks/pending/<prd>.md
@@ -50,9 +53,9 @@ just prd review <prd>                                      # 打开人工审查�
 | 命令 | 作用 |
 |---|---|
 | `just prd status [all\|pending\|archive] [--detail]` | 看板：优先级、类型、日期、**清单进度**、**验收横幅**、**交付依赖**、**执行锁**、**证据包**。分 `PENDING` / `AWAITING HUMAN`（已归档、等人确认）/ `ARCHIVE`（按月折叠）三段 |
-| `just prd start <prd> [--tool 名称] [--branch 名称]` | 领执行锁。他人的新鲜锁 → 拒绝并告诉你是谁（退出码 1）；过期锁 → 自动接管并留档；自己已持有 → 刷新心跳 |
-| `just prd heartbeat <prd>` | 续期自己持有的锁 |
-| `just prd release <prd> [--force]` | 释放；不是自己持有的锁需要 `--force` |
+| `just prd start <prd> [--tool 名称] [--branch 名称]` | **仅人工直跑**：领执行锁。他人的新鲜锁 → 拒绝并告诉你是谁（退出码 1）；过期锁 → 自动接管并留档；自己已持有 → 刷新心跳。经 kc 执行时不要用 |
+| `just prd heartbeat <prd>` | **仅人工直跑**：续期自己持有的锁 |
+| `just prd release <prd> [--force]` | **仅人工直跑**：释放；不是自己持有的锁需要 `--force` |
 | `just prd check <prd>... [--structure-only \| --archive-ready]` | 门禁，见下 |
 | `just prd check --archived` | 审计 `tasks/archive/` 下全部 PRD |
 | `just prd review <prd> [--print]` | 打开人工审查清单（没有就回退证据报告）；`--print` 只打印路径 |
@@ -74,6 +77,8 @@ just prd review <prd>                                      # 打开人工审查�
 提交时由 pre-commit 钩子自动检查「新归档」的 PRD（改动已归档 PRD 的人工验收记录不会被重新裁决）。
 
 ## 执行锁
+
+**kc 接管后，本节描述的锁不参与 agent 流程**：kc 用 issue 标签、`.kc-worktrees/` 工作区和 `kc peers` 的认领记录来保证同一时刻只有一个执行者。锁只在人工直跑时作为本机互斥使用，留着是为了这条旁路，以及历史归档 PRD 的记录仍可解析。
 
 `tasks/evidence/<prd-stem>/active.lock`，本机文件，不进 git。要点：
 

@@ -1,0 +1,408 @@
+# KedaCode 本地仓库配置
+# `kc init` 会写入仓库级配置的默认值（generated_content 除外，见文末示例）；这些值
+# 随后显式覆盖全局默认值。没有默认值的可选字段、以及未写入的 generated_content，
+# 才继承 config.toml / 环境变量 / 代码里的全局默认值。
+# 本文件在 daemon 启动时读取一次：改完要重启 daemon 才生效（`kc run` 这类单轮
+# 命令每次调用都重新读取，无需重启）。
+# 完整字段说明见 docs/guides/agent-runner.md。
+
+# 仓库身份标识（用于多仓库管理时区分不同仓库）
+[agent_runner.repository]
+# 仓库在 KedaCode 中的唯一标识，通常与远程仓库名一致
+id = "zata-code-template-rust"
+# 是否允许 runner 处理该仓库的 Issue
+enabled = true
+# 管理终端 / 日志中显示的友好名称
+display_name = "rust-study"
+
+# GitHub labels 状态流转配置
+[agent_runner.labels]
+ready = "agent/ready"
+running = "agent/running"
+supervising = "agent/supervising"
+review = "agent/automated-review-passed"
+human_review = "human/awaiting-review"
+failed = "agent/failed"
+blocked = "agent/blocked"
+waiting = "agent/waiting"
+validation_pending = "validation/pending"
+validation_passed = "validation/passed"
+verifier_passed = "validation/verifier-passed"
+rework_prd = "agent/rework-prd"
+deliberate = "agent/deliberate"
+direct_pr = "direct-pr"
+auto_merge = "auto-merge"
+prd_auto_merge = "prd-auto-merge"
+
+# agent 注册表：每个 agent 的调用形态（bin / 路由标签 / 容器认证 / 四种用途的 argv 与输出协议）
+[agent_runner.agents]
+
+# Git 发布配置：推送 remote、目标基础分支 base_branch
+[agent_runner.git]
+# 推送分支和创建 PR 时使用的 Git remote 名称
+remote = "origin"
+# 创建 worktree 与 PR 的目标基础分支
+base_branch = "main"
+
+# Issue worktree 的创建与定位命令；默认使用 kc worktree，通常无需修改
+[agent_runner.worktree]
+# 创建新 worktree 的命令；{issue_number} 和 {base_branch} 会被替换
+create_command = "kc worktree create --branch issue-{issue_number} --base-branch {base_branch}"
+# 复用已有 worktree 时定位路径的命令
+reuse_command = "kc worktree path --branch issue-{issue_number}"
+# 获取 worktree 绝对路径的命令
+path_command = "kc worktree path --branch issue-{issue_number}"
+# 是否为每个 Issue worktree 建独立库(建库 + 改写 .env.local 的 DATABASE_URL 后跑 alembic upgrade head);默认开启,需目标仓含 scripts/shared/template/setup_copied_database.py,缺脚本或无关系型 DB 时告警并回退到共享库
+provision_database = true
+
+# Runner 行为配置：每轮处理 Issue 数量、默认 agent、提交前验证命令
+[agent_runner.runner]
+# 并行上限：该仓库最多同时运行几个自动领取的 Issue（默认 1）。优先级为 kc daemon run --concurrency > Backlog 页面设置 > 本值；daemon 执行期间按轮询间隔补位，显式 kc run 不受约束
+max_concurrent_issues = 1
+# 默认使用的 AI agent：auto / claude / codex / kimi
+default_agent = "auto"
+# Agent 失败后的最大重试次数
+max_recovery_attempts = 5
+# 每次重试前等待的秒数
+recovery_retry_delay_seconds = 30
+# 跨 agent fallback 链：主 agent 失败后依次尝试本机可用 agent（如 ["claude", "kimi", "codex"]），命令不存在则自动跳过；设为空列表可关闭切换
+agent_fallback_order = [
+    "claude",
+    "kimi",
+    "codex",
+]
+agent_fallback_candidates = []
+# 最多切换 agent 次数（order=[a,b,c] 且此值=2 时最多尝试 3 个 agent）
+max_agent_switches = 2
+# 瞬时网络/传输错误（socket 断开 / 5xx / 网关超时）的就地重试次数
+transient_retry_attempts = 2
+# 瞬时错误每次重试前等待的秒数
+transient_retry_delay_seconds = 10
+# 单个 agent session 遇到执行超时后，最多续跑的额外轮数（默认 1）
+timeout_resume_attempts = 1
+timeout_seconds = 14400
+fix_agent_enabled = true
+# 是否启用交付收尾层（Closeout Agent）：清单未勾 / 缺 Change Log / 证据清单字段格式非法 / 前端改动缺视觉证据这四类门禁失败先用一次短命收尾修复，失败才整轮重跑；设 false 回到旧行为
+closeout_agent_enabled = true
+# 文本类收尾（补勾选、补 Change Log、修证据清单字段）的 wall-clock 超时秒数；留空依次回退到 fix_timeout_seconds、再到 timeout_seconds
+closeout_timeout_seconds = 600
+# 视觉证据补采的 wall-clock 超时秒数（要真启动应用截图/录屏，不与文本类共用短超时）；留空回退链同上
+closeout_visual_timeout_seconds = 1800
+inactivity_timeout_seconds = 1200
+# 提交前自动运行的验证命令；任一命令失败会进入 recovery
+verification_commands = [
+    "just test",
+    "just ci",
+]
+
+# KedaCode 任务记忆与 Skill 草稿存储配置
+[agent_runner.memory]
+enabled = true
+base_dir = ".kedacode/memory"
+skill_drafts_dir = ".kedacode/skills/drafts"
+promoted_skills_dirs = [
+    ".kedacode/skills",
+]
+top_k_skills = 3
+top_k_facts = 5
+auto_promote = true
+auto_promote_threshold = 3
+auto_promote_min_success_rate = 1.0
+
+# 发布前安全边界：自动合并开关、禁止提交的路径模式
+[agent_runner.safety]
+# 是否允许自动合并 PR（强烈建议保持 false；与 agent_runner.autopilot.enabled 同时为 true 才会真正生效）
+auto_merge = false
+# 提交前禁止变更的路径通配模式
+forbidden_path_patterns = [
+    ".env",
+    ".env.*",
+    "secrets/*",
+    "docker-compose.prod.yml",
+]
+# 匹配后可覆盖 forbidden_path_patterns 的路径通配例外；应保持范围狭窄
+forbidden_path_exceptions = []
+
+# Autopilot 快速档（合并队列）：supervisor 之后串行合并；需配合 safety.auto_merge = true 同时启用
+[agent_runner.autopilot]
+# 是否运行合并队列；全仓自动合并还需 safety.auto_merge=true，单 PRD 可用 prd-auto-merge 标签显式授权
+enabled = false
+# 合并方式；当前唯一支持 'squash'（非法值在加载期拒绝）
+merge_method = "squash"
+# Issue 需要 validation 时是否要求 validation/verifier-passed 标签先存在
+require_verifier_pass = true
+# verifier 绿灯后自动替人工勾选 PR body 的 sign-off 清单（幂等）
+auto_sign_off = true
+# 等 PR checks 全绿的最大秒数；超时则放弃本轮合并
+merge_check_timeout_seconds = 1800
+
+# Backlog 持续调度：控制 daemon 是否自动发现并推进 pending PRD，与自动合并独立
+[agent_runner.backlog]
+# 是否允许 daemon 持续发现并推进 pending PRD；与自动合并开关独立
+auto_advance = false
+
+# Realistic Validation 证据门禁配置
+[agent_runner.validation]
+# 是否启用 Realistic Validation 证据门禁
+enabled = true
+# worktree 内证据目录根（默认 tasks/evidence，按任务分子目录；.md 报告经 .gitignore 白名单进版本库，原始产物被排除；显式配置其它值如 .iar/evidence 则保持整目录排除的旧行为）
+evidence_dir = "tasks/evidence"
+# orphan 证据分支前缀
+branch_prefix = "kc-evidence/"
+# 是否逐项检查证据文件格式
+evidence_format_check = true
+# 是否用 agent 解析 PRD 中的格式要求
+parse_evidence_format_with_agent = true
+# 证据 prompt 与 PR 评论的固定标签语言，如 zh-CN / en-US
+language = "zh-CN"
+# 是否要求带 kc:structured-evidence marker 的 Issue 提供 evidence.json manifest
+structured_evidence = true
+# 是否要求每个结构化证据项提供 negative_control（红→绿判别力,默认开;关掉则回退旧行为）
+require_negative_control = true
+# 是否由 keda 复跑每个结构化证据项的 command 以确认其真的通过（默认开;关掉则只信 agent 证据文件）
+reexecute_commands = true
+# keda 复跑单条命令的超时秒数（默认 300;超时判失败,命令须为自终止的检查）
+reexecute_timeout_seconds = 300
+# 命中代码树指纹(HEAD^{tree})时跳过该项 RV 命令复跑,避免 blocked-continue/换 agent 重复跑（默认开;工作区脏则不缓存、照常复跑）
+reexecute_cache_enabled = true
+# 是否启用独立 verifier agent 复验（默认开;开启后在开 PR 前换一个 agent 对抗复验,red 自动打回 builder）
+verifier_enabled = true
+# verifier 用哪个 agent（auto=自动挑一个≠builder 的）
+verifier_agent = "auto"
+# verifier agent 运行墙钟超时秒数（默认 1800；多条 RV + negative control 的 PRD 需要更大值）
+verifier_timeout_seconds = 1800
+# verifier agent 连续多少秒没有任何输出才判卡死并杀掉（默认 1200；与墙钟并存，让墙钟可以放宽而真卡死仍被及时杀掉）
+verifier_inactivity_timeout_seconds = 1200
+artifact_health_enabled = true
+# 前端改动（git diff 命中 frontend_paths）是否强制证据目录含真实视觉文件(图片/视频),否则门禁失败(默认开;独立于 verifier)
+frontend_visual_evidence_required = true
+# 判定为前端的目录前缀列表(默认 frontend-admin/frontend-public);runner 用它识别目标仓库的前端改动
+frontend_paths = [
+    "frontend-admin",
+    "frontend-public",
+]
+
+# 实现 Agent 的 prompt 模板；默认 phase 与自定义阶段模板
+[agent_runner.prompts]
+# 默认使用的 prompt 阶段
+default_phase = "execution"
+
+[agent_runner.prompts.phases]
+
+# Draft PR 创建前的 AI review 门禁（push 之后、PR 之前）
+[agent_runner.pre_pr_review]
+# 是否启用 Draft PR 创建前的 AI review
+enabled = true
+# 执行 review 的 agent：auto / claude / codex / kimi
+review_agent = "auto"
+# 是否允许实现 agent 与 reviewer 为同一个
+allow_same_agent = true
+# 谁修复 review 报出的问题：self（审核者自己修，默认）/ executor（交回实现者）/ 任意已注册 agent 名
+repair_agent = "self"
+# review 不通过时的最大修复轮数
+max_attempts = 2
+# review agent 最长运行秒数
+timeout_seconds = 1800
+# reviewer 报出问题但未写 commit request 时，同一轮内追加提醒的最大次数
+commit_request_reminder_attempts = 1
+review_prompt_template = []
+
+# Draft PR 创建后的自动 supervisor 配置
+[agent_runner.post_pr_supervisor]
+# 是否启用 post-PR supervisor
+enabled = true
+# 执行 supervisor 的 agent
+supervisor_agent = "auto"
+# 谁执行 supervisor 判定后的代码修复：self（supervisor 自己修，默认）/ executor（交回实现者）/ 任意已注册 agent 名
+repair_agent = "self"
+auto_repair_ci = false
+# supervisor 要求修复时的最大修复 / rebase 次数
+max_repair_attempts = 2
+# supervisor agent 进程崩溃（API / 网络等基础设施错误）时同一 cycle 内的最大重试次数
+max_agent_crash_retries = 5
+# 崩溃重试的初始退避秒数，之后每次重试翻倍
+crash_retry_initial_backoff_seconds = 30
+# 崩溃重试单次退避等待的最大秒数
+crash_retry_max_backoff_seconds = 600
+key_paths = []
+max_diff_chars = 6000
+previous_findings_injection_enabled = true
+findings_artifact_dir = ".kedacode/state"
+
+# Daemon 轮询与崩溃对账配置（覆盖全局 [agent_runner.daemon] 默认）
+[agent_runner.daemon]
+# supervise-daemon 轮询间隔秒数
+review_interval_seconds = 120
+# daemon 轮询间隔秒数
+run_interval_seconds = 120
+# 每轮 Phase 0 审议最大 Issue 数
+max_deliberation_issues = 1
+# 是否在每轮开头对账崩溃遗留的 agent/running 僵尸 attempt（续传 / 重新入队 / 判失败三出口留痕）；关闭后僵尸不被触碰
+reconcile_stale_attempts = true
+# 对账的 claim 老化阈值(秒):claim 含 started_at 且距 now 超过此值即便 PID 仍活也视为 stale
+reclaim_ttl_seconds = 18000
+presence_enabled = true
+lease_ttl_seconds = 1200
+
+# 活跃 attempt 停滞监督（默认开启；关闭后不再按周期调用模型）
+[agent_runner.stall_supervisor]
+enabled = true
+check_interval_seconds = 1800
+stalled_after_seconds = 1800
+agent = "auto"
+diagnosis_timeout_seconds = 600
+diagnosis_inactivity_timeout_seconds = 300
+
+# 交互式决策（kc ask）配置：默认 agent、输出目录、执行确认等
+[agent_runner.interactive_decision]
+# 是否启用 kc ask 交互式决策
+enabled = true
+# kc ask 默认使用的 agent：auto / claude / codex / kimi
+default_agent = "claude"
+# 决策日志与审计文件的默认输出目录
+default_output_dir = "logs/agent-runner/decisions"
+# 规划 agent 的最长运行秒数
+planner_timeout_seconds = 120
+# 输入 prompt 的最大字符数
+max_context_chars = 24000
+# 是否允许 `kc ask --yes` 跳过人工确认
+allow_execute_yes = true
+
+# 交互式 REPL（kc 无子命令）配置：默认 agent、审计目录与命令确认策略
+[agent_runner.repl]
+enabled = true
+default_agent = "claude"
+default_output_dir = "logs/agent-runner/repl"
+max_context_chars = 24000
+agent_timeout_seconds = 120
+auto_confirm_commands = [
+    "labels sync --dry-run",
+    "run --dry-run",
+    "supervise --dry-run",
+    "review --dry-run",
+    "ask --plan-only",
+]
+confirm_commands = [
+    "run",
+    "daemon",
+    "supervise",
+    "supervise-daemon",
+    "review",
+    "review-daemon",
+    "issue create",
+    "recover",
+    "blocked-continue",
+    "worktree create",
+    "worktree remove",
+]
+
+# 多 agent 审议（kc deliberate）配置：轮数、合成 agent、参与角色
+[agent_runner.deliberation]
+# 默认审议轮数
+default_rounds = 2
+# 汇总最终结论的默认 agent
+default_synthesizer = "claude"
+# 审议会话输出目录
+default_output_dir = "logs/agent-runner/deliberations"
+continue_on_agent_error = true
+agent_failure_timeout_seconds = 300
+stale_rounds_before_hint = 3
+
+# 审议角色：架构师，关注系统设计与可维护性
+[agent_runner.deliberation.profiles.architect]
+# 该角色使用的 agent
+agent = "claude"
+# 角色标识
+role = "architect"
+# 角色行为 prompt
+behavior_prompt = "You are an experienced software architect. Analyze the requirement from a system design perspective. Focus on modularity, scalability, and maintainability."
+
+# 审议角色：质疑者，挑战假设与风险
+[agent_runner.deliberation.profiles.skeptic]
+# 该角色使用的 agent
+agent = "kimi"
+# 角色标识
+role = "skeptic"
+# 角色行为 prompt
+behavior_prompt = "You are a skeptical reviewer. Challenge assumptions, identify risks, and point out edge cases. Ask hard questions that others might miss."
+
+# 审议角色：实现者，关注可行性与落地步骤
+[agent_runner.deliberation.profiles.implementer]
+# 该角色使用的 agent
+agent = "codex"
+# 角色标识
+role = "implementer"
+# 角色行为 prompt
+behavior_prompt = "You are a pragmatic implementer. Focus on feasibility, concrete steps, and implementation details. Highlight what can be built and what resources are needed."
+
+# 生命周期 Agent 矩阵（仓库级覆盖）：九键 implementation / fix / closeout / verifier / review / supervisor / planner / content_generation / deliberate，值为已注册 agent 名、该阶段的 auto 或 fix/closeout 的 executor；未写出的键回落全局 config.toml 与既有配置键。详见 docs/guides/lifecycle-agent-matrix.md
+[agent_runner.lifecycle_agents]
+
+[agent_runner.presets]
+
+[agent_runner.lifecycle_presets]
+#
+# =============================================================================
+# Agent 注册表：[agent_runner.agents.<name>] 声明 agent 的调用形态
+# =============================================================================
+# 字段：bin（可执行文件）、label / label_color / label_description（路由标签）、
+# auth_home / auth_include / auth_exclude（容器认证目录）、
+# project_skills_dir（项目级 skills 目录），以及四种用途 profile：
+# run（主执行）/ deliberate（辩论）/ generate（内容生成）/ repl（交互），
+# 各自可声明 args（argv 片段，字面量，支持 {cwd}/{prompt}/{worktree}/{session_id} 占位符）、
+# prompt_delivery（argv_tail / flag / stdin）、prompt_flag（flag 投递时的参数名）、
+# output_protocol（plain / claude-stream-json / pi-json-lines / codex-json-lines /
+# opencode-json-lines 或插件协议）、expand（展开器声明，如 "git_writable_roots:--add-dir"）、
+# tail_args / resume_tail_args、read_only；agent 级可声明 supports_resume / resume_args。
+#
+# 下面是 pi 的注册块示例（内置默认已生效，无需复制即可用）：
+#
+# [agent_runner.agents.pi]
+# bin = "pi"
+# label = "agent/pi"
+# label_color = "7C3AED"
+# label_description = "Use pi for local runner execution."
+# auth_home = "~/.pi/agent"
+# auth_include = ["auth.json", "settings.json", "models.json", "skills"]
+# auth_exclude = ["sessions", "pi-crash.log", "models-store.json"]
+# project_skills_dir = ".pi/skills"
+# supports_resume = true
+# resume_args = ["--session", "{session_id}"]
+#
+# [agent_runner.agents.pi.profiles.run]
+# args = ["--approve", "--mode", "json"]
+# prompt_delivery = "stdin"
+# output_protocol = "pi-json-lines"
+#
+# [agent_runner.agents.pi.profiles.deliberate]
+# args = ["--approve", "--no-tools", "--print"]
+# prompt_delivery = "stdin"
+# output_protocol = "plain"
+# read_only = true
+#
+# [agent_runner.agents.pi.profiles.generate]
+# args = ["--no-tools", "--print"]
+# prompt_delivery = "stdin"
+# output_protocol = "plain"
+# read_only = true
+#
+# [agent_runner.agents.pi.profiles.repl]
+# args = ["--approve", "--print"]
+# prompt_delivery = "stdin"
+# output_protocol = "plain"
+#
+# =============================================================================
+# Issue / PR 内容生成：[agent_runner.generated_content.<target>]（默认不写入）
+# =============================================================================
+# 四个 target：issue_from_prd（kc issue create <prd>）、issue_from_prompt
+# （kc issue create --from-prompt，产物不含 PRD 锚点）、draft_pr（Draft PR 正文）、
+# prd_from_issue（rework-prd）。draft_pr 默认 enabled=false，使用事实正文；其余由 agent 生成。
+# agent 失败或超时回退 title_template / body_template，再回退内置正文。默认值随 kc 升级，
+# 不会被本文件钉死。需要偏离时取消注释，并只写要改的键（未写的键继续继承默认值）：
+#
+# [agent_runner.generated_content.draft_pr]
+# enabled = true
+# agent = "claude"
+# timeout_seconds = 300
+#
+# 完整字段与回退顺序见 docs/guides/agent-runner.md 的「生成模式与回退」。
