@@ -3,7 +3,7 @@
 > ✅ **交付前置**：无，可立即开工。
 > 结构化声明见 §8 Delivery Dependencies，**那里是唯一事实源**。
 
-> ⬜ **验收状态**：实现进行中；执行侧验证和人工验收仍未完成。
+> ⏸️ **验收状态**：验证阻塞；代码已落地，执行侧验证因 Nacos 缺 `AGENT_TRACING_DB_PASSWORD` 无法执行，缺口见 §13 Final Reconciliation。
 > 本行是 §9 Acceptance Checklist 的投影，**那里是唯一事实源**。
 
 本 PRD 分为两部分：Part A 用行为与已确认决策锁定目标；Part B 记录服务边界、实现方式和验证证据。
@@ -430,7 +430,12 @@ No new prototype file changes in this PRD; the adjacent `ai-assistant` prototype
 
 ### Final Reconciliation
 
-用户已于 2026-10-29 确认 §1 解读和 §2 H1-H3 推荐选项。实现、部署文件与文档已落入工作区；最终审查已将 producer 输入收紧为 30 个冻结事件类型，未知事件与 payload 字段均拒绝，JSON Schema 的事件类型及必填/可选字段与 Rust 目录逐项一致。已完成 fmt/clippy、Rust 文档、前端类型与构建、两张 tracing 镜像构建、Compose/Nginx 配置解析和 PRD 结构检查。单元/集成/浏览器测试、真实 PostgreSQL ingest 闭环与真实 UI 截图未运行；因此 §9 行为、安全和 Human-Confirmed 项仍待最终验证/人工验收，不由执行方预先勾选。
+- Interpretation: 2026-10-29 用户确认 §1 解读与 §2 H1-H3 推荐选项；最终实现与该解读一致，最终审查把 producer 输入收紧为 30 个冻结事件类型。
+- Public behavior and contracts: 接入为版本化 HTTP/JSON batch，未知事件类型与未知 payload 字段一律拒绝；JSON Schema 的事件类型及必填/可选字段与 Rust 目录逐项一致；tracing API、tracing 数据库、frontends/tracing 与两个镜像各自独立，跨服务只走 HTTP，不共享账号数据库、迁移或私有 crate。
+- Related PRD status: 本 PRD 以验证阻塞归档；P1-FEAT-20261030-092543-agent-service-runtime 依赖的 producer 契约已存在，不受本 PRD 的验证阻塞影响。
+- Requirements and risks: FR-1 到 FR-9 的代码、迁移与部署文件已落地；残留风险是管理员范围首版为平台级、OTLP 导出可选且默认关闭、缺真实 Agent producer（接入契约只用 OpenAPI/JSON Schema 示例客户端证明）。
+- Validation blocker: Nacos Compose 配置缺 `AGENT_TRACING_DB_PASSWORD`，`just tracing-up` 起不来真实栈，rv-1/rv-2/rv-3 无法执行；单元/集成/浏览器测试、真实 PostgreSQL ingest 闭环、最终树上的两个镜像构建与真实 UI 截图均未执行。已通过的只有 `just ci-all`（lint + test + doc + 三个前端检查）。
+- Validation follow-up: loop `tracing-verify`（`tasks/loops/tracing-verify.md`，每日 02:00，无阻塞 PRD 时自动跳过）负责补上该配置后重跑 rv-1/rv-2/rv-3 并回填证据。
 
 ## 14. Change Log
 
@@ -441,3 +446,11 @@ No new prototype file changes in this PRD; the adjacent `ai-assistant` prototype
 - Reason: 用户确认将前端应用像后端服务一样集中归类，便于识别仓库边界。
 - Impact: 同步更新实现路径、运行入口和架构文档；不改变应用、API 或部署边界。
 - Review: 用户已在 2026-10-29 对目录调整方案明确授权。
+
+### 按验证阻塞路径归档
+- Type: process
+- Before: 验收状态横幅为 `⬜ 实现进行中`，§13 只有一段自由叙述，归档门禁无法判定。
+- After: 横幅为 `⏸️ 验证阻塞`，§13 拆成四个对账字段加 `Validation blocker` / `Validation follow-up`，执行侧空框保持未勾。
+- Reason: 代码已落地，但 Nacos 缺 `AGENT_TRACING_DB_PASSWORD` 导致真实栈起不来，rv-1/rv-2/rv-3 无法执行；按 PRD 契约的阻塞路径如实归档，而不是勾掉没跑过的项。
+- Impact: 归档只表示代码落地；缺口由 loop `tracing-verify` 每日复核，阻塞解除后补证据再翻到 `🧍 待人工验收`。
+- Review: 用户于 2026-10-30 要求「代码做完即归档、验证交给循环」，并确认采用 `⏸️ 验证阻塞` 路径。

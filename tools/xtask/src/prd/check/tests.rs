@@ -122,6 +122,86 @@ fn resolved_marker_is_not_counted_as_owed() {
 }
 
 #[test]
+fn validation_blocked_allows_archiving_with_open_executor_items() {
+    // 代码落地但验证做不了：执行侧空框保持 `[ ]`，靠 ⏸️ 横幅与两个字段如实归档。
+    let blocked = validation_blocked_prd("===ARCHIVED====");
+    assert!(
+        validate(&blocked, Gate::ArchiveReady).is_empty(),
+        "{:#?}",
+        messages(&validate(&blocked, Gate::ArchiveReady))
+    );
+}
+
+#[test]
+fn validation_blocked_archive_requires_blocker_and_follow_up() {
+    // 只翻横幅不交代原因，等于用 ⏸️ 逃逸：两个字段必须实填。
+    let blocked = validation_blocked_prd("");
+    let issues = messages(&validate(&blocked, Gate::ArchiveReady));
+    assert!(
+        issues
+            .iter()
+            .any(|issue| issue.contains("missing field: Validation blocker")),
+        "{issues:?}"
+    );
+    assert!(
+        issues
+            .iter()
+            .any(|issue| issue.contains("missing field: Validation follow-up")),
+        "{issues:?}"
+    );
+}
+
+#[test]
+fn validation_blocked_banner_without_open_executor_items_is_rejected() {
+    let done = valid_prd().replace(
+        "🧍 **验收状态**：待人工验收。",
+        "⏸️ **验收状态**：验证阻塞。",
+    );
+    let issues = messages(&validate(&done, Gate::ArchiveReady));
+    assert!(
+        issues
+            .iter()
+            .any(|issue| issue.contains("no open executor item")),
+        "{issues:?}"
+    );
+}
+
+#[test]
+fn awaiting_human_banner_cannot_carry_open_executor_items() {
+    // 执行侧欠的活不能甩给人：这种组合必须走 ⏸️，否则横幅在撒谎。
+    let owed = valid_prd().replace("- [x] built", "- [ ] built");
+    let issues = messages(&validate(&owed, Gate::ArchiveReady));
+    assert!(
+        issues
+            .iter()
+            .any(|issue| issue.contains("cannot be handed to the human")),
+        "{issues:?}"
+    );
+}
+
+/// `⏸️ 验证阻塞` 的基线：执行侧一项未勾、横幅改为阻塞；传入的 `fields` 决定是否补两个字段。
+fn validation_blocked_prd(fields: &str) -> String {
+    let tail = if fields.is_empty() {
+        String::new()
+    } else {
+        String::from(
+            "- Validation blocker: Nacos 缺 AGENT_TRACING_DB_PASSWORD，真实栈起不来\n\
+             - Validation follow-up: loop tracing-verify 每日复核并开 issue 修复\n",
+        )
+    };
+    valid_prd()
+        .replace("- [x] built", "- [ ] built")
+        .replace(
+            "🧍 **验收状态**：待人工验收。",
+            "⏸️ **验收状态**：验证阻塞。",
+        )
+        .replace(
+            "- Requirements and risks: confirmed — no new risks\n",
+            &format!("- Requirements and risks: confirmed — no new risks\n{tail}"),
+        )
+}
+
+#[test]
 fn archive_requires_a_banner_that_agrees_with_the_human_group() {
     let not_started =
         valid_prd().replace("🧍 **验收状态**：待人工验收。", "⬜ **验收状态**：未开工。");

@@ -90,7 +90,7 @@ static FINAL_RECONCILIATION_HEADING: LazyLock<Regex> =
     LazyLock::new(|| regex(r"^###\s+Final Reconciliation\b"));
 static RECONCILIATION_FIELD: LazyLock<Regex> = LazyLock::new(|| {
     regex(
-        r"^\s*[-*+]\s+(?P<key>Interpretation|Public behavior and contracts|Related PRD status|Requirements and risks):\s*(?P<value>.*)$",
+        r"^\s*[-*+]\s+(?P<key>Interpretation|Public behavior and contracts|Related PRD status|Requirements and risks|Validation blocker|Validation follow-up):\s*(?P<value>.*)$",
     )
 });
 static INTERPRETATION_HEADING: LazyLock<Regex> =
@@ -137,6 +137,8 @@ const REQUIRED_RECONCILIATION_FIELDS: [&str; 4] = [
     "Related PRD status",
     "Requirements and risks",
 ];
+/// `⏸️ 验证阻塞` 归档时额外必需的字段：阻塞原因与被追踪的闭合方。
+const BLOCKED_RECONCILIATION_FIELDS: [&str; 2] = ["Validation blocker", "Validation follow-up"];
 
 /// 必需章节及其标题写法，按它们应有的先后顺序排列。
 static REQUIRED_SECTIONS: LazyLock<Vec<(&'static str, Regex)>> = LazyLock::new(|| {
@@ -311,8 +313,13 @@ fn archive_reconciliation_issues(content: &str) -> Vec<Issue> {
         }
     }
 
+    // `⏸️ 验证阻塞` 额外要求交代阻塞原因与闭合方，否则空框就只是空框。
+    let mut required: Vec<&str> = REQUIRED_RECONCILIATION_FIELDS.to_vec();
+    if is_validation_blocked(content) {
+        required.extend(BLOCKED_RECONCILIATION_FIELDS);
+    }
     let mut issues = Vec::new();
-    for field in REQUIRED_RECONCILIATION_FIELDS {
+    for field in required {
         let Some((line, value)) = fields.get(field) else {
             issues.push(Issue::at(
                 heading + 1,
@@ -342,11 +349,22 @@ fn unchecked_item_issues(content: &str) -> Vec<Issue> {
     if !checklist.section_found {
         return vec![Issue::general("Missing Acceptance Checklist section")];
     }
+    // `⏸️ 验证阻塞` 是唯一允许带着执行侧空框归档的状态；空框本身照旧保留，
+    // 由 Final Reconciliation 的 Validation blocker / follow-up 交代清楚。
+    if is_validation_blocked(content) {
+        return Vec::new();
+    }
     checklist
         .execution_unchecked_items()
         .into_iter()
         .map(|item| Issue::at(item.line, item.text.clone()))
         .collect()
+}
+
+/// 横幅是否声明了 `⏸️ 验证阻塞`。
+fn is_validation_blocked(content: &str) -> bool {
+    find_acceptance_banner(content).and_then(|banner| banner.status)
+        == Some(AcceptanceStatus::ValidationBlocked)
 }
 
 /// 归档时验收状态横幅与 §9 不一致的问题。
@@ -368,19 +386,42 @@ fn acceptance_banner_issues(content: &str) -> Vec<Issue> {
         )];
     };
     let open_human_count = checklist.human_unchecked_items().len();
+    let open_executor_count = checklist.execution_unchecked_items().len();
     match banner.status {
         None => vec![Issue::at(
             banner.line,
-            "Acceptance Status Banner state is not recognised: use exactly one of ⬜ 未开工 / 🧍 待人工验收 / ✅ 已验收.",
+            "Acceptance Status Banner state is not recognised: use exactly one of ⬜ 未开工 / ⏸️ 验证阻塞 / \
+             🧍 待人工验收 / ✅ 已验收.",
         )],
         Some(AcceptanceStatus::NotStarted) => vec![Issue::at(
             banner.line,
-            "Acceptance Status Banner still says ⬜ 未开工 but the PRD is being archived: set 🧍 待人工验收 \
+            "Acceptance Status Banner still says ⬜ 未开工 but the PRD is being archived: set ⏸️ 验证阻塞 while \
+             executor items are blocked, 🧍 待人工验收 while Human-Confirmed items remain open, else ✅ 已验收.",
+        )],
+        Some(AcceptanceStatus::ValidationBlocked) if open_executor_count == 0 => vec![Issue::at(
+            banner.line,
+            "Acceptance Status Banner says ⏸️ 验证阻塞 but §9 has no open executor item: flip it to 🧍 待人工验收 \
              while Human-Confirmed items remain open, else ✅ 已验收.",
+        )],
+        Some(AcceptanceStatus::ValidationBlocked) => Vec::new(),
+        Some(AcceptanceStatus::AwaitingHuman) if open_executor_count > 0 => vec![Issue::at(
+            banner.line,
+            format!(
+                "Acceptance Status Banner says 🧍 待人工验收 but {open_executor_count} executor item(s) in §9 are \
+                 still unchecked: executor validation cannot be handed to the human — set ⏸️ 验证阻塞 and record \
+                 Validation blocker / Validation follow-up, or finish the validation first."
+            ),
         )],
         Some(AcceptanceStatus::AwaitingHuman) if open_human_count == 0 => vec![Issue::at(
             banner.line,
             "Acceptance Status Banner says 🧍 待人工验收 but §9 has no open Human-Confirmed item: flip it to ✅ 已验收.",
+        )],
+        Some(AcceptanceStatus::Accepted) if open_executor_count > 0 => vec![Issue::at(
+            banner.line,
+            format!(
+                "Acceptance Status Banner says ✅ 已验收 but {open_executor_count} executor item(s) in §9 are still \
+                 unchecked: set ⏸️ 验证阻塞 (validation blocked) or finish the validation."
+            ),
         )],
         Some(AcceptanceStatus::Accepted) if open_human_count > 0 => vec![Issue::at(
             banner.line,

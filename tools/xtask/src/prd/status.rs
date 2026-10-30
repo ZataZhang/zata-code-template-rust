@@ -105,6 +105,11 @@ impl PrdRecord {
     pub fn awaits_human_review(&self) -> bool {
         self.bucket == ARCHIVE_DIR && self.acceptance == Some(AcceptanceStatus::AwaitingHuman)
     }
+
+    /// 是否「代码已落地、验证受阻」：读到的副本在 archive，且横幅为 `⏸️ 验证阻塞`。
+    pub fn validation_blocked(&self) -> bool {
+        self.bucket == ARCHIVE_DIR && self.acceptance == Some(AcceptanceStatus::ValidationBlocked)
+    }
 }
 
 /// 在证据目录里找 `<目录名>.<kind>.md` 或 `<kind>.md`。
@@ -286,27 +291,41 @@ impl Palette {
 }
 
 /// 把记录按验收轴分流：`(待人工验收, 其余 pending, 其余 archive)`。同名 PRD 在两处并存时以 pending 为准。
-pub fn split_awaiting_human(
+pub fn split_acceptance_records(
     pending: Vec<PrdRecord>,
     archive: Vec<PrdRecord>,
-) -> (Vec<PrdRecord>, Vec<PrdRecord>, Vec<PrdRecord>) {
+) -> (
+    Vec<PrdRecord>,
+    Vec<PrdRecord>,
+    Vec<PrdRecord>,
+    Vec<PrdRecord>,
+) {
     let pending_stems: HashSet<String> = pending.iter().map(|record| record.stem.clone()).collect();
-    let mut awaiting: Vec<PrdRecord> = pending
+    let select = |predicate: fn(&PrdRecord) -> bool| -> Vec<PrdRecord> {
+        let mut selected: Vec<PrdRecord> = pending
+            .iter()
+            .chain(archive.iter())
+            .filter(|record| predicate(record))
+            .filter(|record| record.bucket == PENDING_DIR || !pending_stems.contains(&record.stem))
+            .cloned()
+            .collect();
+        selected.sort_by(|a, b| a.path.file_name().cmp(&b.path.file_name()));
+        selected
+    };
+    let awaiting = select(PrdRecord::awaits_human_review);
+    let blocked = select(PrdRecord::validation_blocked);
+    let claimed: HashSet<PathBuf> = awaiting
         .iter()
-        .chain(archive.iter())
-        .filter(|record| record.awaits_human_review())
-        .filter(|record| record.bucket == PENDING_DIR || !pending_stems.contains(&record.stem))
-        .cloned()
+        .chain(blocked.iter())
+        .map(|record| record.path.clone())
         .collect();
-    awaiting.sort_by(|a, b| a.path.file_name().cmp(&b.path.file_name()));
-    let claimed: HashSet<PathBuf> = awaiting.iter().map(|record| record.path.clone()).collect();
     let rest = |records: Vec<PrdRecord>| {
         records
             .into_iter()
             .filter(|record| !claimed.contains(&record.path))
             .collect::<Vec<_>>()
     };
-    (awaiting, rest(pending), rest(archive))
+    (awaiting, blocked, rest(pending), rest(archive))
 }
 
 /// 渲染上下文。
@@ -350,6 +369,7 @@ fn checklist_cell(record: &PrdRecord, palette: Palette) -> String {
 fn acceptance_cell(record: &PrdRecord, palette: Palette) -> String {
     match record.acceptance {
         Some(AcceptanceStatus::NotStarted) => palette.dim("⬜ 未开工"),
+        Some(AcceptanceStatus::ValidationBlocked) => palette.yellow("⏸️ 验证阻塞"),
         Some(AcceptanceStatus::AwaitingHuman) => palette.yellow("🧍 待人工验收"),
         Some(AcceptanceStatus::Accepted) => palette.green("✅ 已验收"),
         None => palette.dim("-"),
@@ -601,11 +621,21 @@ pub fn render_board(
     let (pending, mut warnings) = collect_bucket(&tasks_dir, PENDING_DIR, &evidence_root);
     let (archive, archive_warnings) = collect_bucket(&tasks_dir, ARCHIVE_DIR, &evidence_root);
     warnings.extend(archive_warnings);
-    let (awaiting, pending, archive) = split_awaiting_human(pending, archive);
+    let (awaiting, blocked, pending, archive) = split_acceptance_records(pending, archive);
 
     let mut out = String::new();
     if scope != Scope::Archive {
         render_section("PENDING", "tasks/pending", &pending, ctx, false, &mut out);
+    }
+    if scope == Scope::All && !blocked.is_empty() {
+        render_section(
+            "VALIDATION BLOCKED",
+            "已归档，验证受阻（横幅 ⏸️ 验证阻塞；缺口见 Final Reconciliation）",
+            &blocked,
+            ctx,
+            false,
+            &mut out,
+        );
     }
     if scope == Scope::All && !awaiting.is_empty() {
         render_section(
@@ -708,6 +738,23 @@ mod tests {
         // 待人工验收的那条不该再出现在 ARCHIVE 月视图的异常里，而已验收的 done 是月概览的一部分。
         assert!(board.contains("2026-05  1 条 · 清单完成 1/1"), "{board}");
         assert!(!board.contains("⚠ 有未勾完的清单"), "{board}");
+    }
+
+    #[test]
+    fn validation_blocked_records_get_their_own_section() {
+        let root = tempfile::tempdir().unwrap();
+        write(
+            root.path(),
+            "tasks/archive/P1-FEAT-20260517-000000-blocked.md",
+            &prd_text("⏸️ **验收状态**：验证阻塞。", "- [ ] still owed", ""),
+        );
+
+        let board = render(root.path(), Scope::All, false);
+
+        assert!(board.contains("VALIDATION BLOCKED (1)"), "{board}");
+        let blocked = board.lines().find(|line| line.contains("blocked")).unwrap();
+        assert!(blocked.contains("⏸️ 验证阻塞"), "{blocked}");
+        assert!(!board.contains("AWAITING HUMAN"), "{board}");
     }
 
     #[test]

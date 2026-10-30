@@ -168,11 +168,16 @@ impl ChecklistState {
     }
 }
 
-/// 验收状态横幅的三态。
+/// 验收状态横幅的四态。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AcceptanceStatus {
     /// `⬜ 未开工`。
     NotStarted,
+    /// `⏸️ 验证阻塞`：代码已落地，执行侧仍有未勾项因为验证做不了。
+    ///
+    /// 唯一允许带着执行侧空框归档的状态，但归档要求 Final Reconciliation 写明
+    /// `Validation blocker` 与 `Validation follow-up`。它既不表示等人验收，也不表示已验收。
+    ValidationBlocked,
     /// `🧍 待人工验收`：执行侧完成，等人确认。
     AwaitingHuman,
     /// `✅ 已验收`（旧称 `✅ 可归档` 按已验收读）。
@@ -181,8 +186,9 @@ pub enum AcceptanceStatus {
 
 /// 状态词到状态值的映射。`可归档` 是 v4 及以前 `已验收` 的旧称：存量 PRD 里的 `✅ 可归档`
 /// 一律按已验收读，不要求回头改文件。
-const STATUS_TOKENS: [(AcceptanceStatus, &str); 4] = [
+const STATUS_TOKENS: [(AcceptanceStatus, &str); 5] = [
     (AcceptanceStatus::NotStarted, "未开工"),
+    (AcceptanceStatus::ValidationBlocked, "验证阻塞"),
     (AcceptanceStatus::AwaitingHuman, "待人工验收"),
     (AcceptanceStatus::Accepted, "已验收"),
     (AcceptanceStatus::Accepted, "可归档"),
@@ -541,6 +547,20 @@ mod tests {
             parse_acceptance_status("> 验收状态：✅ 可归档"),
             Some(AcceptanceStatus::Accepted),
             "旧称按已验收读"
+        );
+    }
+
+    #[test]
+    fn banner_reads_the_validation_blocked_state() {
+        // ⏸️ 与 🧍 都含「验收」以外的汉字，靠状态词本身区分，不能靠 emoji 前缀。
+        assert_eq!(
+            parse_acceptance_status("> ⏸️ **验收状态**：验证阻塞。"),
+            Some(AcceptanceStatus::ValidationBlocked)
+        );
+        assert_eq!(
+            parse_acceptance_status("> Acceptance Status: ⏸️ validation blocked"),
+            None,
+            "状态词只认中文契约值；英文注释不构成声明"
         );
     }
 
