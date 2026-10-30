@@ -340,6 +340,14 @@ behavior_prompt = "You are a pragmatic implementer. Focus on feasibility, concre
 
 [agent_runner.presets]
 
+[agent_runner.presets.codebuddy-kimi-k3_1-pro]
+agent = "codebuddy"
+model = "kimi-k3.1-pro"
+
+[agent_runner.presets.qoder-deepseek-flash-max]
+agent = "qoder"
+model = "DeepSeek-Flash"
+reasoning_effort = "max"
 [agent_runner.lifecycle_presets]
 #
 # =============================================================================
@@ -406,3 +414,12 @@ behavior_prompt = "You are a pragmatic implementer. Focus on feasibility, concre
 # timeout_seconds = 300
 #
 # 完整字段与回退顺序见 docs/guides/agent-runner.md 的「生成模式与回退」。
+implementation = "qoder-deepseek-flash-max"
+fix = "qoder-deepseek-flash-max"
+closeout = "qoder-deepseek-flash-max"
+verifier = "qoder-deepseek-flash-max"
+review = "codebuddy-kimi-k3_1-pro"
+supervisor = "codebuddy-kimi-k3_1-pro"
+planner = "qoder-deepseek-flash-max"
+content_generation = "qoder-deepseek-flash-max"
+deliberate = "qoder-deepseek-flash-max"
