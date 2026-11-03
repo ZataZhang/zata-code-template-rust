@@ -1,0 +1,15 @@
+[package]
+name = "tpl-platform-oss"
+description = "面向各业务服务的统一对象存储客户端，支持本地 MinIO 与阿里云 OSS。"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+opendal.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

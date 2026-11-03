@@ -59,11 +59,13 @@ frontends/                           # 独立部署的前端应用
 packages/                         # 前端复用包
 deploy/                           # 网关与部署配置
 tools/                            # 开发工具
+platform/                         # 无业务归属的共享平台 crate
+  oss/                             # MinIO / 阿里云 OSS 对象存储客户端
 ```
 
 包名使用业务前缀，例如 `tpl-orders-core`，避免多个服务都叫 `tpl-core`。`engines` 只在确有平台能力适配需求时增加。Rust 模块不需要独立的 `Cargo.toml`；只有独立 package 才需要清单。
 
-当前 workspace 成员是 `services/*`、`services/accounts/crates/*`、`services/agent-tracing/crates/*`、`tools/*`。新增服务及其私有 package 时，在根 `Cargo.toml` 显式登记对应路径。依赖版本仍由根 `[workspace.dependencies]` 管理，每个服务单独选择依赖。
+当前 workspace 成员是 `platform/*`、`services/*`、`services/accounts/crates/*`、`services/agent-tracing/crates/*`、`tools/*`。新增服务及其私有 package 时，在根 `Cargo.toml` 显式登记对应路径。依赖版本仍由根 `[workspace.dependencies]` 管理，每个服务单独选择依赖。
 
 新服务内部依赖关系：
 
@@ -72,9 +74,12 @@ tools/                            # 开发工具
 <service>-infrastructure → <service>-core
 <service>               → 自己的各层（唯一装配根）
 <service>-core          → 不依赖其他内部 package
+platform-<capability>  → 不依赖任何业务服务
 ```
 
-服务 A 不得依赖服务 B 的装配包、领域、仓储或迁移。现有账号私有 crate 同样不可供新服务引用。跨服务复用优先采用公开协议；只有出现真实重复需求，才提取无业务归属的平台 package，并在本节与架构规范登记职责和依赖方向。不要预建共享领域模型或通用业务服务基类。
+服务 A 不得依赖服务 B 的装配包、领域、仓储或迁移。现有账号私有 crate 同样不可供新服务引用。跨服务复用优先采用公开协议；只有出现真实重复需求，才提取无业务归属的平台 package，并在本节与架构规范登记职责和依赖方向。业务服务只允许从自己的 infrastructure 层依赖平台 package，平台 package 不得依赖业务服务。不要预建共享领域模型或通用业务服务基类。
+
+当前共享对象存储 crate 为 `tpl-platform-oss`（`platform/oss/`）：本地使用 zata-ops 提供的 MinIO，生产使用阿里云 OSS。它只提供通用对象读写和限时下载链接；每个服务仍在自己的 core 定义存储端口，由 infrastructure 实现并在 composition root 装配。接入步骤与配置示例见[对象存储指南](../guides/object-storage.md)。
 
 ### 数据与事务
 
@@ -115,7 +120,7 @@ CI 可统一触发，但必须能够按 package 构建、按服务生成镜像�
 ## 架构原则
 
 - **依赖向内**：外层可以依赖内层，内层不能反向依赖外层。最内层是 `tpl-core`。
-- **服务私有 crate 边界有两道防线**：依赖写在 Cargo.toml 里，没声明就无法 `use`（Cargo）；已声明的依赖由 `services/accounts/tests/architecture.rs` 按服务前缀对照允许名单，检查层间方向并拒绝跨服务私有 crate 依赖。后续业务服务只依赖自己的私有 crate，不得依赖账号领域、仓储或迁移。
+- **服务与平台 crate 边界有两道防线**：依赖写在 Cargo.toml 里，没声明就无法 `use`（Cargo）；已声明的依赖由 `services/accounts/tests/architecture.rs` 对照允许名单，检查服务层方向、共享平台 crate 的依赖方向，并拒绝跨服务私有 crate 依赖。业务服务只允许由自己的 infrastructure 依赖 `platform/*`；平台 crate 不得依赖业务服务。
 - **端口与适配器**：core 只定义端口（trait）；基础设施与平台能力提供适配器（实现）；装配层把适配器接到用例上。
 - **按职责分层**：按变化率和业务边界分层，而不是按技术栈堆目录。
 - **可替换实现**：数据库、HTTP 客户端、日志、配置都在外层，core 只依赖接口。

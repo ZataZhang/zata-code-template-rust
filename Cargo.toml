@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
-# services/accounts/crates/* 是账号服务私有层；services/* 是独立业务服务；tools/* 是开发期工具。
-members = ["services/*", "services/accounts/crates/*", "services/agent-tracing/crates/*", "tools/*"]
+# platform/* 是无业务归属的共享平台 crate；services/accounts/crates/* 是账号私有层；services/* 是独立业务服务；tools/* 是开发期工具。
+members = ["platform/*", "services/*", "services/accounts/crates/*", "services/agent-tracing/crates/*", "tools/*"]
 
 [workspace.package]
 version = "0.1.0"
@@ -19,8 +19,10 @@ tpl-infrastructure = { path = "services/accounts/crates/infrastructure" }
 tpl-agent-tracing-core = { path = "services/agent-tracing/crates/core" }
 tpl-agent-tracing-api = { path = "services/agent-tracing/crates/api" }
 tpl-agent-tracing-infrastructure = { path = "services/agent-tracing/crates/infrastructure" }
+tpl-platform-oss = { path = "platform/oss" }
 
 anyhow = "1"
+opendal = { version = "0.56", default-features = false, features = ["executors-tokio", "layers-timeout", "reqwest-rustls-tls", "services-oss", "services-s3"] }
 clap = { version = "4", features = ["derive"] }
 argon2 = "0.6"
 async-trait = "0.1"

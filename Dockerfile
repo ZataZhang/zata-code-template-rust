@@ -6,6 +6,7 @@ WORKDIR /app
 
 COPY Cargo.toml Cargo.lock ./
 # Workspace 成员目录都要复制，Cargo 才能解析工作区；tools 是开发期工具，不会被编译进镜像。
+COPY platform ./platform
 COPY services ./services
 COPY tools ./tools
 # query! 宏使用提交的离线 schema；镜像构建不需要连接数据库。

@@ -16,6 +16,8 @@
 
 目录模板、数据与事务边界、服务间通信、身份和独立发布要求见 [系统设计：微服务结构设计](../architecture/system-design.md#微服务结构设计)。后续新增服务沿用该约定；已有 tracing 子服务和独立前端是具体实现示例。
 
+跨服务共享的技术能力放在根目录 `platform/<capability>/`，使用 `tpl-platform-*` 命名，不归属任何业务服务。业务服务只允许在自己的 `infrastructure` 层依赖平台 crate；`core` 继续定义本服务需要的端口，composition root 负责装配。当前 `tpl-platform-oss` 统一支持 zata-ops 本机 MinIO 与阿里云 OSS，使用说明见[对象存储指南](../guides/object-storage.md)。
+
 ## 账号服务内部层
 
 每一层是一个独立的 Cargo package，目录在 `services/accounts/crates/` 下：
@@ -33,7 +35,7 @@
 **依赖向内：外层可以依赖 `tpl-core`，`tpl-core` 不能依赖任何外层。** 依赖关系写在各 crate 的 `Cargo.toml` 里，有两道防线：
 
 1. **Cargo**：没声明的依赖就 `use` 不了；
-2. **守卫测试** `services/accounts/tests/architecture.rs`：读取 `cargo metadata`，按服务名区分所有业务服务的私有层，断言依赖符合允许名单，并拒绝跨服务 crate 依赖。只靠第 1 道不够——有人把违规依赖写进 `Cargo.toml`，照样能编译通过。
+2. **守卫测试** `services/accounts/tests/architecture.rs`：读取 `cargo metadata`，按服务名区分业务服务私有层，并检查 `platform/` 下的共享平台 crate，断言依赖符合允许名单并拒绝跨服务 crate 依赖。只靠第 1 道不够——有人把违规依赖写进 `Cargo.toml`，照样能编译通过。
 
 因此不需要 Python 版那种逐文件扫描 import 的脚本，但这一个测试要保留。它失败时修 `Cargo.toml`，不要改测试；只有约定本身变更时才改它的名单，并同步更新本页。新增 crate 时必须同时登记到名单里，否则测试会失败。
 
@@ -48,6 +50,10 @@ tpl-agent-tracing-core            → （无）
 tpl-agent-tracing-api             → tpl-agent-tracing-core
 tpl-agent-tracing-infrastructure  → tpl-agent-tracing-core
 tpl-agent-tracing                 → 自己的各层（唯一装配根）
+
+accounts-infrastructure           → tpl-core + tpl-platform-oss（仅在业务需要时）
+agent-tracing-infrastructure      → tpl-agent-tracing-core + tpl-platform-oss（仅在业务需要时）
+tpl-platform-oss                   → 不依赖任何业务服务
 ```
 
 允许与禁止：
@@ -58,6 +64,7 @@ tpl-agent-tracing                 → 自己的各层（唯一装配根）
 - `tpl-engines` 不得依赖 `tpl-api`；需要基础设施能力时，通过 core 的端口，由 `tpl-accounts` 注入
 - 跨层协作一律经由 `tpl-core` 里的端口（trait）
 - 未来业务服务不得依赖 `tpl-api` / `tpl-core` / `tpl-infrastructure` 等账号私有 crate；跨业务复用须提取与账号域无关的契约或平台 crate
+- 共享平台 crate 放在 `platform/`，仅 infrastructure 层可以依赖；平台 crate 不得依赖任何业务服务
 - 各服务只能依赖自身带服务前缀的私有层；例如 tracing 只依赖 `tpl-agent-tracing-*`，账号与 tracing 之间只走公开 HTTP 契约
 
 > 与 Python 版模板的差异：Python 版规则写着「infrastructure 不得导入 core」，靠的是 Python 的结构化类型（Protocol 鸭子类型）让基础设施不 import 就能满足 core 的接口。Rust 的 trait 必须显式 `impl`，实现方必须依赖定义 trait 的 crate，所以这里采用标准的 Clean Architecture 方向：所有外层依赖 core。

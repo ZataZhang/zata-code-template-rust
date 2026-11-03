@@ -20,7 +20,10 @@ const ALLOWED_LAYER_DEPENDENCIES: &[(&str, &[&str])] = &[
     ("accounts-core", &[]),
     ("accounts-api", &["accounts-core"]),
     ("accounts-engines", &["accounts-core"]),
-    ("accounts-infrastructure", &["accounts-core"]),
+    (
+        "accounts-infrastructure",
+        &["accounts-core", "platform-oss"],
+    ),
     (
         "accounts",
         &[
@@ -32,7 +35,10 @@ const ALLOWED_LAYER_DEPENDENCIES: &[(&str, &[&str])] = &[
     ),
     ("agent-tracing-core", &[]),
     ("agent-tracing-api", &["agent-tracing-core"]),
-    ("agent-tracing-infrastructure", &["agent-tracing-core"]),
+    (
+        "agent-tracing-infrastructure",
+        &["agent-tracing-core", "platform-oss"],
+    ),
     (
         "agent-tracing",
         &[
@@ -41,6 +47,7 @@ const ALLOWED_LAYER_DEPENDENCIES: &[(&str, &[&str])] = &[
             "agent-tracing-infrastructure",
         ],
     ),
+    ("platform-oss", &[]),
 ];
 
 /// 某一层实际声明的内部依赖（含 dev / build 依赖）。
@@ -101,8 +108,9 @@ fn read_declared_dependencies() -> Vec<LayerDependencies> {
     );
     let metadata: Value =
         serde_json::from_slice(&output.stdout).expect("cargo metadata 输出不是 JSON");
-    // 只看 `services/*/crates/` 下的内部层与 `services/` 下的业务服务。`tools/` 下的开发期工具（xtask）
-    // 不进生产服务，也不参与依赖方向检查。内部层名带服务前缀，避免同名层掩盖跨服务依赖。
+    // 只看 `services/*/crates/` 下的内部层、`services/` 下的业务服务与 `platform/` 下的中立平台 crate。
+    // `tools/` 下的开发期工具（xtask）不进生产服务，也不参与依赖方向检查。服务层名带服务前缀，
+    // 避免同名层掩盖跨服务依赖。
     let packages: Vec<&Value> = metadata["packages"]
         .as_array()
         .expect("缺少 packages")
@@ -115,7 +123,9 @@ fn read_declared_dependencies() -> Vec<LayerDependencies> {
                         .parent()
                         .and_then(Path::parent)
                         .and_then(Path::file_name)
-                        .is_some_and(|name| matches!(name.to_str(), Some("crates" | "services")))
+                        .is_some_and(|name| {
+                            matches!(name.to_str(), Some("crates" | "services" | "platform"))
+                        })
                 })
         })
         .collect();
@@ -148,6 +158,13 @@ fn read_declared_dependencies() -> Vec<LayerDependencies> {
                         .and_then(|name| name.to_str())
                         .expect("无法从 manifest_path 得到 crate 目录名");
                     format!("{service_name}-{crate_name}")
+                }
+                "platform" => {
+                    let crate_name = package_directory
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .expect("无法从 manifest_path 得到平台 crate 目录名");
+                    format!("platform-{crate_name}")
                 }
                 "services" => package_directory
                     .file_name()
@@ -208,7 +225,10 @@ fn checker_rejects_forbidden_and_unregistered_dependencies() {
             ],
         ), // 禁止跨服务依赖，也禁止接入层越过 core
         layer("accounts-engines", &["accounts-core"]),
-        layer("accounts-infrastructure", &["accounts-core"]),
+        layer(
+            "accounts-infrastructure",
+            &["accounts-core", "platform-oss"],
+        ),
         layer(
             "accounts",
             &[
@@ -220,7 +240,10 @@ fn checker_rejects_forbidden_and_unregistered_dependencies() {
         ),
         layer("agent-tracing-core", &[]),
         layer("agent-tracing-api", &["agent-tracing-core"]),
-        layer("agent-tracing-infrastructure", &["agent-tracing-core"]),
+        layer(
+            "agent-tracing-infrastructure",
+            &["agent-tracing-core", "platform-oss"],
+        ),
         layer(
             "agent-tracing",
             &[
@@ -229,6 +252,7 @@ fn checker_rejects_forbidden_and_unregistered_dependencies() {
                 "agent-tracing-infrastructure",
             ],
         ),
+        layer("platform-oss", &[]),
         layer("billing-core", &[]), // 未登记的新层
     ];
 

@@ -4,6 +4,7 @@ FROM rust:1-slim-bookworm AS builder
 WORKDIR /app
 
 COPY Cargo.toml Cargo.lock ./
+COPY platform ./platform
 COPY services ./services
 COPY tools ./tools
 COPY .sqlx ./.sqlx
