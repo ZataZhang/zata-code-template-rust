@@ -730,7 +730,10 @@ def main() -> int:
             run_checked(
                 ["just", "stack-up"],
                 environment=environment,
-                options=RunOptions(redacted_values=redacted_values),
+                options=RunOptions(
+                    redacted_values=redacted_values,
+                    include_failure_output=True,
+                ),
             )
             verify_container_configuration(fixture, secrets_bundle)
             run_checked(

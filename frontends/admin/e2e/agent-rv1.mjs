@@ -268,8 +268,16 @@ try {
 
   await selectRadix(adminPage, "admin-agent-entry-visible", "Yes")
   await adminPage.getByTestId("admin-agent-entry-priority").fill("10")
+  const entryPolicySaveResponse = adminPage.waitForResponse((response) =>
+    response.url().includes("/entry-policy") && response.request().method() === "PUT",
+  )
   await adminPage.getByTestId("admin-agent-entry-save").click()
-  check("Auto 入口策略保存成功", await appears(adminPage, "Saved", 10000))
+  const entryPolicySaveResult = await entryPolicySaveResponse
+  check(
+    "Auto 入口策略保存成功",
+    entryPolicySaveResult.ok() && (await appears(adminPage, "Saved", 10000)),
+    `HTTP ${entryPolicySaveResult.status()}`,
+  )
 
   const agentsList = await adminApi(adminCookie, `/admin/api/organizations/${organizationId}/agents`)
   const a2aAgent = agentsList.items.find((item) => item.display_name === a2aAgentDisplay)
