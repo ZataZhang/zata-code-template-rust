@@ -25,6 +25,14 @@ ROOT = Path(__file__).resolve().parents[1]
 NACOS_IMAGE = "nacos/nacos-server:v3.2.4"
 NACOS_TIMEOUT_SECONDS = 240
 SPECIAL_ADMIN_PASSWORD = 'literal = ${SHOULD_NOT_EXPAND} "quoted" with spaces'
+COMPOSE_BUILD_SERVICE_NAMES = (
+    "accounts",
+    "web",
+    "admin",
+    "agent-service",
+    "agent-tracing",
+    "tracing-ui",
+)
 
 
 @dataclass(frozen=True)
@@ -102,7 +110,7 @@ def run_checked(
         failure_output = ""
         if options.include_failure_output:
             failure_output = "\n".join(
-                (completed.stdout + completed.stderr).splitlines()[-35:]
+                (completed.stdout + completed.stderr).replace("\r", "\n").splitlines()[-100:]
             )
             for secret_value in options.redacted_values:
                 if secret_value:
@@ -727,6 +735,23 @@ def main() -> int:
                 secrets_bundle.nacos_token,
                 secrets_bundle.nacos_identity,
             )
+            print("== 顺序预构建 Compose 镜像，避免并行 Rust 构建耗尽 CI runner")
+            for service_name in COMPOSE_BUILD_SERVICE_NAMES:
+                print(f"== 构建 {service_name} 镜像")
+                run_checked(
+                    [
+                        "./scripts/compose-config.sh",
+                        "compose",
+                        "full",
+                        "build",
+                        service_name,
+                    ],
+                    environment=environment,
+                    options=RunOptions(
+                        redacted_values=redacted_values,
+                        include_failure_output=True,
+                    ),
+                )
             run_checked(
                 ["just", "stack-up"],
                 environment=environment,

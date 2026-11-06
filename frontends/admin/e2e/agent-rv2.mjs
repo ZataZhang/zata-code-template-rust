@@ -472,6 +472,7 @@ check(
 // 6. 最终独立计数：只有两条有效 Run，负控没有留下任何记录。
 const finalCounts = agentCounts()
 const tracingRunCount = Number(tracingScalar("SELECT count(*) FROM agent_runs"))
+const newTracingRunCount = tracingRunCount - tracingBaseline
 const invalidAgentCount = Number(
   agentScalar(
     `SELECT count(*) FROM agent_runs WHERE agent_id IN ('${unitAgent.id}','${denyAgent.id}')`,
@@ -484,11 +485,11 @@ check(
   "最终 Agent/tracing 记录与成功 Run 一一对应且无越权副作用",
   finalCounts.runs === baseline.runs + 2 &&
     finalCounts.sessions === baseline.sessions + 2 &&
-    tracingRunCount >= 1 &&
-    tracingRunCount <= finalCounts.runs - baseline.runs &&
+    newTracingRunCount >= 1 &&
+    newTracingRunCount <= finalCounts.runs - baseline.runs &&
     invalidAgentCount === 0 &&
     otherOwnedRuns === 0,
-  jsonText({ baseline, finalCounts, tracingRunCount, invalidAgentCount, otherOwnedRuns }),
+  jsonText({ baseline, tracingBaseline, finalCounts, tracingRunCount, newTracingRunCount, invalidAgentCount, otherOwnedRuns }),
 )
 check(
   "管理员 ID 与平台管理员不同（scope 隔离前提）",
