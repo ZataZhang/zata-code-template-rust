@@ -29,7 +29,7 @@ Agent 数据库中的表都由本服务拥有，其他服务不得跨库查询�
 - 对话与运行：`chat_sessions`、`chat_messages`、`agent_runs`、`agent_run_events`、`agent_trace_outbox`、`agent_run_idempotency`。
 - 内容与审计：`user_resources`、`run_artifacts`、`agent_audit_records`。
 
-`agent_runs` 保存创建时的 Agent / Runtime / 输入 / Skill / 资源 / 路由与授权快照，是 Run 状态与执行事件的唯一事实源。没有 AgentVersion 表；普通 Agent 更新不产生“发布版本”。用户资源、Skill 资产和 Run 产物正文存放在 `[agent.storage].root` 指向的 Blob 卷，元数据表只保存文件名、MIME、大小和 SHA-256。
+`agent_runs` 保存创建时的 Agent / Runtime / 输入 / Skill / 资源 / 路由与授权快照，是 Run 状态与执行事件的唯一事实源。没有 AgentVersion 表；普通 Agent 更新不产生“发布版本”。用户资源、Skill 资产和 Run 产物正文存放在 `[agent.storage].root` 指向的 Blob 卷，元数据表只保存文件名、MIME、大小和 SHA-256。存储键由服务生成；文件系统适配器逐级校验根目录边界，拒绝路径穿越和指向根目录外部的符号链接。
 
 ## 3. HTTP API
 
