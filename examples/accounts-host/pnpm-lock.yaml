@@ -145,7 +145,7 @@ packages:
     resolution: {integrity: sha512-2j9bGt5Jh8hj+vPtgzPtl72j0yRxHAyumoo6TNfAjsLB04UtpSvPbPcDcBMxz7n+9CYB0c1GxQFxYRg2jimqGw==}
 
   '@tpl/accounts-ui@file:../../packages/accounts-ui/tpl-accounts-ui-0.1.0.tgz':
-    resolution: {integrity: sha512-3gY7EzZvf/w5KcmDrKElarQTWDK6tRbcAtY5G6BWAk0WksZb6H5T5VJfG62l1/Cxm5m5HGEsrfUlQ2dELpy4xQ==, tarball: file:../../packages/accounts-ui/tpl-accounts-ui-0.1.0.tgz}
+    resolution: {integrity: sha512-S489qmvX8k6FPLK2Y1gzBxUWJXC1+FwAboJ6p3Z8Q/5Ip82pm/Ah3iq/g1Oo3JqIbtkFzr9lsYqTD23f7QoQvg==, tarball: file:../../packages/accounts-ui/tpl-accounts-ui-0.1.0.tgz}
     version: 0.1.0
     peerDependencies:
       react: '>=18'
