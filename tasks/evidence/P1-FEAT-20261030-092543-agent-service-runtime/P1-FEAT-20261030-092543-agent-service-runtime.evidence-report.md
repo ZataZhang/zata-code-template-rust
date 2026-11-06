@@ -22,7 +22,7 @@
 
 ## 真实验证执行记录
 
-执行日期：2026-11-06。当前 PR 验证代码提交为 `18f0d35d7371229d616ad49c80f9fbd0fef94cba`；该提交包含 rebase 后的 Agent 功能与 Blob 根目录/符号链接边界加固。Issue 的 Realistic Validation 清单包含 rv-1～rv-3 三项，`evidence.json` 的 item 1～3 与之一一对应；rv-4～rv-6 是 PRD §7.6 追加的补充 oracle（边界、业务微服务样例、独立部署 Runtime），在同一最终代码提交上执行并把输出保存在本目录，但不作为 Issue 清单项写入 manifest（Issue 清单只有 3 项）。所有场景都通过真实入口运行：真实浏览器（Playwright Chromium，经 `CHROME_PATH` 指定）→ public Next.js 站点 Route Handler → Agent HTTP API → accounts `/auth/me` 或 `/admin/auth/me` → Organization/ACL → Sandbox 或真实 A2A adapter → Agent PostgreSQL + outbox → tracing producer HTTP API → tracing PostgreSQL/query API。除 rv-6 使用独立部署的官方 `a2a-sdk==1.3.0` 参考 Runtime 外，其余场景的外部 A2A endpoint 由本地协议替身模拟（PRD 允许）；所有组件均未使用内存替身，也未直连数据库伪造结果。
+执行日期：2026-11-06。RV-1～RV-6 与 `kc evidence check` 在 `18f0d35d7371229d616ad49c80f9fbd0fef94cba` 上执行；该提交包含 rebase 后的 Agent 功能与 Blob 根目录/符号链接边界加固。随后 `f21be74`、`48f1340` 修复 Docker / pnpm 构建集成配置，`3001d8a` 仅将既有代码等价拆分到子模块；这些提交不改变功能行为；`just ci`、`just check-lines` 与 accounts-host 包安装、类型检查和构建均在该代码树上复验通过。Issue 的 Realistic Validation 清单包含 rv-1～rv-3 三项，`evidence.json` 的 item 1～3 与之一一对应；rv-4～rv-6 是 PRD §7.6 追加的补充 oracle（边界、业务微服务样例、独立部署 Runtime），在该行为基线提交上执行并把输出保存在本目录，但不作为 Issue 清单项写入 manifest（Issue 清单只有 3 项）。所有场景都通过真实入口运行：真实浏览器（Playwright Chromium，经 `CHROME_PATH` 指定）→ public Next.js 站点 Route Handler → Agent HTTP API → accounts `/auth/me` 或 `/admin/auth/me` → Organization/ACL → Sandbox 或真实 A2A adapter → Agent PostgreSQL + outbox → tracing producer HTTP API → tracing PostgreSQL/query API。除 rv-6 使用独立部署的官方 `a2a-sdk==1.3.0` 参考 Runtime 外，其余场景的外部 A2A endpoint 由本地协议替身模拟（PRD 允许）；所有组件均未使用内存替身，也未直连数据库伪造结果。
 
 | 检查点 | 命令 | 结果 | 关键输出 |
 |---|---|---|---|
@@ -78,11 +78,13 @@
 - `TEST_AGENT_DATABASE_URL=postgres://agent:agentpass@localhost:5435/agent_dev cargo test -p tpl-agent --test http_end_to_end -- --ignored`：1 passed / 0 failed，新增的 300 KiB JSON → 413 `payload_too_large`、300 KiB 上传 → 201、1 MiB+1 上传 → 413 断言均执行并通过（本机测试库，不代替 rv-4 的真实入口证据）。
 - `cargo test -p agent-business-service`：9 passed / 0 failed（契约解析 4、上游错误映射 3、路径校验 2）；`cargo clippy -p agent-business-service --all-targets -- -D warnings` 通过。
 - `cargo test -p tpl-agent-engines`：25 passed / 0 failed，含新增的 `direct_message_completes_even_when_the_message_carries_a_task_id` 与 `non_terminal_task_requires_polling`；`cargo clippy -p tpl-agent-engines --all-targets -- -D warnings` 通过。
-- `just ci`：2026-11-06 通过（exit 0）——`cargo fmt --all --check`、`cargo clippy --workspace --all-targets -- -D warnings`、`cargo test --workspace`、`cargo doc --workspace --no-deps` 均成功，包含 Blob 路径穿越与符号链接回归测试。
+- `just ci`：2026-11-06 在 `3001d8a` 上通过（exit 0）——`cargo fmt --all --check`、`cargo clippy --workspace --all-targets -- -D warnings`、`cargo test --workspace`、`cargo doc --workspace --no-deps` 均成功，包含 Blob 路径穿越与符号链接回归测试。
+- `just check-lines`：2026-11-06 在 `3001d8a` 上通过；超限的 A2A 与 admin 文件已按职责拆分。
+- `CI=true pnpm install --frozen-lockfile && pnpm typecheck && pnpm build`：在 `examples/accounts-host/` 使用 pnpm 11.3.0 通过；本地 tarball 被单独排除在 release-age registry 检查外。
 
 ## 代码树与证据文件
 
-- PR 验证提交：`18f0d35d7371229d616ad49c80f9fbd0fef94cba`；tree：`6f0d624ffb3262cd8a83dd0cc152bbe16c9afa2e`。RV-1～RV-6 与 `kc evidence check` 均在该提交代码上完成；其后只更新本证据报告。
+- 真实入口证据提交：`18f0d35d7371229d616ad49c80f9fbd0fef94cba`；tree：`6f0d624ffb3262cd8a83dd0cc152bbe16c9afa2e`。后续 `f21be74`、`48f1340` 与 `3001d8a` 分别补齐 Docker workspace 构建上下文、pnpm 本地 tarball 的发布时限检查，并将 A2A 与 admin 实现等价拆分到子模块；在 `3001d8a` 上重新运行 `just ci`、`just check-lines` 和 accounts-host 包安装/类型检查/构建，均通过。
 - PR 基线 `origin/main`：`5851023c`；分支另包含 `01ddeb4`（修正仓库 Runner 对安全 `.env.example` 的误拦截），该修复与 Issue #1 的提交门禁阻塞直接相关。
 - 原始实现基线：`d615578a18bb5b2d4ba482d467086cf3dc71cd28`。2026-11-04 的未提交工作树指纹为历史证据，已由上面的最终提交验证取代。
 - `just ci` 在最终代码提交上 exit 0；见上节。
