@@ -9,6 +9,7 @@ COPY Cargo.toml Cargo.lock ./
 COPY platform ./platform
 COPY services ./services
 COPY tools ./tools
+COPY examples ./examples
 # query! 宏使用提交的离线 schema；镜像构建不需要连接数据库。
 COPY .sqlx ./.sqlx
 

@@ -14,7 +14,9 @@ WORKDIR /app
 
 COPY Cargo.toml Cargo.lock ./
 COPY services ./services
+COPY platform ./platform
 COPY tools ./tools
+COPY examples ./examples
 COPY .sqlx ./.sqlx
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
