@@ -1,5 +1,5 @@
 import { type TFunction } from 'i18next'
-import { Users } from 'lucide-react'
+import { Bot, Building2, ServerCog, Users } from 'lucide-react'
 import { type NavGroup } from '../types'
 
 /**
@@ -20,6 +20,26 @@ export function createNavGroups(t: TFunction): NavGroup[] {
           title: t('nav.users'),
           url: '/users',
           icon: Users,
+        },
+      ],
+    },
+    {
+      title: t('nav.agent'),
+      items: [
+        {
+          title: t('nav.organizations'),
+          url: '/organizations',
+          icon: Building2,
+        },
+        {
+          title: t('nav.agentRuntimes'),
+          url: '/agent-runtimes',
+          icon: ServerCog,
+        },
+        {
+          title: t('nav.agents'),
+          url: '/agents',
+          icon: Bot,
         },
       ],
     },

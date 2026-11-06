@@ -37,9 +37,9 @@ ENV HOSTNAME=0.0.0.0
 
 RUN addgroup -S app && adduser -S app -G app
 COPY --from=builder --chown=app:app /repo/frontends/public/.next/standalone ./
-COPY --from=builder --chown=app:app /repo/frontends/public/.next/static ./frontends/public/.next/static
-COPY --from=builder --chown=app:app /repo/frontends/public/public ./frontends/public/public
+COPY --from=builder --chown=app:app /repo/frontends/public/.next/static ./public/.next/static
+COPY --from=builder --chown=app:app /repo/frontends/public/public ./public/public
 
 USER app
 EXPOSE 3000
-CMD ["node", "frontends/public/server.js"]
+CMD ["node", "public/server.js"]

@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Agent 服务 · Runtime / Session / Tracing 目标原型</title>
+<style>
+  :root {
+    --background: #f7f8f7;
+    --foreground: #17201b;
+    --muted: #66736b;
+    --border: #dfe5e0;
+    --card: #ffffff;
+    --primary: #157f52;
+    --primary-foreground: #ffffff;
+    --accent: #e8f4ee;
+    --warn: #b7791f;
+    --danger: #b23b3b;
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif;
+    color: var(--foreground);
+    background: var(--background);
+  }
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; padding: 14px 24px; background: var(--card); border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 2;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; }
+  .logo { width: 28px; height: 28px; border-radius: 8px; background: var(--primary); color: #fff; display: grid; place-items: center; font-size: 13px; }
+  nav { display: flex; gap: 6px; flex-wrap: wrap; }
+  nav button {
+    border: 1px solid transparent; background: transparent; color: var(--muted);
+    padding: 7px 12px; border-radius: 8px; cursor: pointer; font: inherit;
+  }
+  nav button.active { background: var(--accent); color: var(--primary); border-color: #c9e6d9; font-weight: 600; }
+  main { max-width: 1280px; margin: 0 auto; padding: 24px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 15px; margin: 0; }
+  .sub { color: var(--muted); margin: 0 0 20px; }
+  .view { display: none; }
+  .view.active { display: block; }
+  .grid { display: grid; gap: 16px; }
+  .cols-3 { grid-template-columns: 280px minmax(0, 1fr) 340px; }
+  .cols-2 { grid-template-columns: 340px minmax(0, 1fr); }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+  .card h2 { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+  .row { display: flex; align-items: center; gap: 8px; }
+  .between { justify-content: space-between; }
+  .pill { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 999px; font-size: 12px; background: var(--accent); color: var(--primary); }
+  .pill.warn { background: #fdf3e0; color: var(--warn); }
+  .pill.danger { background: #fbeaea; color: var(--danger); }
+  .muted { color: var(--muted); }
+  .mono { font-family: var(--mono); font-size: 12px; }
+  button.primary, button.ghost, button.danger {
+    font: inherit; border-radius: 8px; padding: 8px 12px; cursor: pointer; border: 1px solid var(--border);
+    background: var(--card); color: var(--foreground);
+  }
+  button.primary { background: var(--primary); border-color: var(--primary); color: var(--primary-foreground); }
+  button.danger { color: var(--danger); border-color: #eccaca; }
+  .list { display: flex; flex-direction: column; gap: 8px; }
+  .item { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: #fff; }
+  .item.selected { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
+  .item .title { font-weight: 600; display: flex; justify-content: space-between; gap: 8px; }
+  .item .meta { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .chat { display: flex; flex-direction: column; min-height: 460px; }
+  .messages { display: flex; flex-direction: column; gap: 10px; flex: 1; overflow: auto; padding: 4px 2px 12px; }
+  .bubble { max-width: 88%; padding: 10px 12px; border-radius: 12px; white-space: pre-wrap; }
+  .bubble.user { align-self: flex-end; background: var(--primary); color: #fff; border-bottom-right-radius: 3px; }
+  .bubble.agent { align-self: flex-start; background: #f0f3f1; border-bottom-left-radius: 3px; }
+  .composer { border-top: 1px solid var(--border); padding-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+  textarea { width: 100%; min-height: 74px; resize: vertical; border: 1px solid var(--border); border-radius: 8px; padding: 10px; font: inherit; }
+  .timeline { display: flex; flex-direction: column; gap: 0; }
+  .event { display: grid; grid-template-columns: 38px 1fr; gap: 8px; padding: 7px 0; border-bottom: 1px dashed var(--border); }
+  .event:last-child { border-bottom: 0; }
+  .seq { font-family: var(--mono); color: var(--muted); font-size: 11px; }
+  .event-name { font-family: var(--mono); font-size: 12px; color: var(--primary); }
+  .event-payload { color: var(--muted); font-size: 12px; word-break: break-word; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); font-size: 13px; vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; }
+  .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+  .field label { font-size: 12px; color: var(--muted); }
+  .field input, .field select { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font: inherit; background: #fff; }
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .tag-row { display: flex; gap: 6px; flex-wrap: wrap; }
+  code { font-family: var(--mono); font-size: 12px; background: #f2f4f3; padding: 1px 5px; border-radius: 4px; }
+  .footer-note { margin-top: 18px; color: var(--muted); font-size: 12px; }
+  @media (max-width: 1080px) { .cols-3 { grid-template-columns: 1fr; } .cols-2 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><span class="logo">A</span> Agent 服务 · 目标原型</div>
+  <nav>
+    <button data-view="admin" class="active">组织 / Runtime / Agent 管理</button>
+    <button data-view="session">用户 Session / Run</button>
+    <button data-view="tracing">Tracing Run 详情</button>
+  </nav>
+</header>
+<main>
+  <p class="sub">静态可点击原型，用于对齐 public/admin/tracing 三个真实入口的布局与关键状态；真实实现截图见 tasks/evidence 对应 rv-1 目录。</p>
+
+  <section id="view-admin" class="view active">
+    <h1>组织与 Agent 目录</h1>
+    <p class="sub">组织管理员维护显式成员、外部 A2A Runtime、Business Agent 与访问规则；部署声明的 builtin Sandbox Runtime 只读。</p>
+    <div class="grid cols-2">
+      <div class="card">
+        <h2>组织 <button class="ghost">+ 新建</button></h2>
+        <div class="list">
+          <div class="item selected"><div class="title">Acme 研发部 <span class="pill">当前</span></div><div class="meta">acme · 3 个 Agent · 2 个部门</div></div>
+          <div class="item"><div class="title">Northwind 运营</div><div class="meta">northwind · 1 个 Agent</div></div>
+        </div>
+        <h2 style="margin-top:20px">成员与部门</h2>
+        <table>
+          <tr><th>主体</th><th>关系</th><th>操作</th></tr>
+          <tr><td>alice@example.test</td><td>研发部 · member</td><td><button class="ghost">移除</button></td></tr>
+          <tr><td>bob@example.test</td><td>无部门 · member</td><td><button class="ghost">分配部门</button></td></tr>
+        </table>
+        <h2 style="margin-top:20px">管理员 scope</h2>
+        <div class="tag-row"><span class="pill">admin #7 · owner</span><span class="pill">admin #9 · manager</span></div>
+      </div>
+
+      <div class="grid" style="gap:16px">
+        <div class="card">
+          <h2>Runtime connections</h2>
+          <table>
+            <tr><th>名称</th><th>来源 / 协议</th><th>状态</th><th>操作</th></tr>
+            <tr><td>platform-sandbox<br><span class="mono muted">内置</span></td><td>builtin / sandbox</td><td><span class="pill">available</span></td><td><span class="muted">只读</span></td></tr>
+            <tr><td>research-a2a<br><span class="mono muted">https://a2a.example.test</span></td><td>external / a2a</td><td><span class="pill warn">unavailable</span></td><td><button class="ghost">刷新</button></td></tr>
+          </table>
+          <div class="split" style="margin-top:14px">
+            <div class="field"><label>名称</label><input value="research-a2a" /></div>
+            <div class="field"><label>Agent Card URL</label><input value="https://a2a.example.test" /></div>
+          </div>
+          <div class="field"><label>凭据别名（密钥由部署注入）</label><input value="a2a-research" /></div>
+          <button class="primary">新增外部 Runtime</button>
+        </div>
+
+        <div class="card">
+          <h2>Business Agents <button class="ghost">+ 创建 Agent</button></h2>
+          <table>
+            <tr><th>Agent</th><th>Runtime（创建时绑定）</th><th>入口</th><th>授权</th></tr>
+            <tr><td>Research Copilot<br><span class="mono muted">v-checksum 4f2c…</span></td><td>platform-sandbox</td><td>auto</td><td>org + 研发部 allow；carol deny</td></tr>
+            <tr><td>Ops Assistant<br><span class="mono muted">v-checksum 91ae…</span></td><td>research-a2a</td><td>explicit</td><td>org allow</td></tr>
+          </table>
+          <div class="split" style="margin-top:14px">
+            <div class="field"><label>名称</label><input value="Research Copilot" /></div>
+            <div class="field"><label>绑定 Runtime</label><select><option>platform-sandbox（builtin）</option><option>research-a2a（external）</option></select></div>
+          </div>
+          <div class="field"><label>系统提示词</label><input value="你是组织内的研究助理，只使用授权工具。" /></div>
+          <div class="split">
+            <div class="field"><label>访问规则主体</label><select><option>unit:research</option><option>user:42</option></select></div>
+            <div class="field"><label>Effect</label><select><option>allow</option><option>deny</option></select></div>
+          </div>
+          <button class="primary">保存 Agent 与访问规则</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="view-session" class="view">
+    <h1>Agent 工作台</h1>
+    <p class="sub">用户只能看到自己创建的 Session；每次发送生成一个 Canonical Run，支持幂等重放、SSE 续读与取消。</p>
+    <div class="grid cols-3">
+      <div class="card">
+        <h2>会话 <button class="ghost">+ 新建</button></h2>
+        <div class="list">
+          <div class="item selected"><div class="title">季度研究报告 <span class="pill">auto</span></div><div class="meta">2 分钟前 · 3 个 Run</div></div>
+          <div class="item"><div class="title">发布检查清单</div><div class="meta">昨天 · 1 个 Run</div></div>
+        </div>
+        <h2 style="margin-top:20px">选择 Agent</h2>
+        <div class="field"><select><option>Auto · 按入口策略裁决</option><option>Research Copilot</option><option>Ops Assistant</option></select></div>
+        <div class="field"><label>Run 状态</label><div><span class="pill">succeeded</span> <span class="mono muted">run 7d1a…e9</span></div></div>
+        <button class="danger" style="width:100%">取消当前 Run</button>
+      </div>
+
+      <div class="card chat">
+        <div class="messages">
+          <div class="bubble user">汇总这份季度渠道数据，并生成一份 markdown 简报。</div>
+          <div class="bubble agent">渠道增长 18%，其中直营渠道贡献了主要增量。已生成产物 quarterly-report.md。
+
+产物：
+- quarterly-report.md</div>
+          <div class="bubble user">把结论压缩成三条给管理层。</div>
+          <div class="bubble agent">1. 总渠道环比增长 18%。<br>2. 直营渠道贡献 62% 增量。<br>3. 建议下季度保持直营投入。</div>
+        </div>
+        <div class="composer">
+          <textarea placeholder="输入消息；支持 ```artifact 与 @delegate 指令">继续补充风险项，并生成风险清单。</textarea>
+          <div class="row between">
+            <div class="row"><button class="ghost">附加资源</button><button class="ghost">选择 Skill</button></div>
+            <button class="primary">发送并创建 Run</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Run 进度 <span class="pill">SSE 已续读</span></h2>
+        <div class="timeline">
+          <div class="event"><span class="seq">#1</span><div><div class="event-name">run.queued</div><div class="event-payload">snapshot r4 · agent checksum 4f2c…</div></div></div>
+          <div class="event"><span class="seq">#2</span><div><div class="event-name">run.started</div><div class="event-payload">runtime platform-sandbox</div></div></div>
+          <div class="event"><span class="seq">#3</span><div><div class="event-name">tool_call.started</div><div class="event-payload">text.summarize</div></div></div>
+          <div class="event"><span class="seq">#4</span><div><div class="event-name">tool_call.completed</div><div class="event-payload">{"characters": 96}</div></div></div>
+          <div class="event"><span class="seq">#5</span><div><div class="event-name">message.delta</div><div class="event-payload">assistant message 3f2a…</div></div></div>
+          <div class="event"><span class="seq">#6</span><div><div class="event-name">run.succeeded</div><div class="event-payload">terminal · trace delivered through #6</div></div></div>
+        </div>
+        <h2 style="margin-top:16px">产物</h2>
+        <div class="list"><div class="item"><div class="title">quarterly-report.md <span class="muted mono">3.2 KB</span></div><div class="meta">text/markdown · 下载</div></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="view-tracing" class="view">
+    <h1>Tracing Run 详情</h1>
+    <p class="sub">tracing 只保存诊断投影：Run、步骤、状态、低敏错误类别与关联 ID；不保存完整提示词、资源正文或密钥。</p>
+    <div class="grid cols-2">
+      <div class="card">
+        <h2>Run 基本信息</h2>
+        <table>
+          <tr><th>Run ID</th><td class="mono">7d1a2c44-…-e9</td></tr>
+          <tr><th>组织 / Agent</th><td>Acme / Research Copilot</td></tr>
+          <tr><th>状态</th><td><span class="pill">succeeded</span></td></tr>
+          <tr><th>Runtime</th><td>platform-sandbox · builtin</td></tr>
+          <tr><th>快照</th><td class="mono">agent 4f2c… · runtime r4</td></tr>
+          <tr><th>事件唯一键</th><td class="mono">run_id + seq</td></tr>
+        </table>
+        <div class="footer-note">Fresh query：恢复后查询到 #1–#6，无重复序号。标记敏感值 <code>[已脱敏]</code>。</div>
+      </div>
+      <div class="card">
+        <h2>脱敏事件流</h2>
+        <div class="timeline">
+          <div class="event"><span class="seq">#1</span><div><div class="event-name">run.queued</div><div class="event-payload">status=queued · agent_id · runtime_id</div></div></div>
+          <div class="event"><span class="seq">#2</span><div><div class="event-name">run.started</div><div class="event-payload">status=running · adapter=sandbox</div></div></div>
+          <div class="event"><span class="seq">#3</span><div><div class="event-name">tool_call.started</div><div class="event-payload">tool=text.summarize</div></div></div>
+          <div class="event"><span class="seq">#4</span><div><div class="event-name">tool_call.completed</div><div class="event-payload">result={"characters":96}</div></div></div>
+          <div class="event"><span class="seq">#5</span><div><div class="event-name">message.delta</div><div class="event-payload">content=[已脱敏]</div></div></div>
+          <div class="event"><span class="seq">#6</span><div><div class="event-name">run.succeeded</div><div class="event-payload">status=succeeded</div></div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+<script>
+  const buttons = document.querySelectorAll("nav button")
+  const views = document.querySelectorAll(".view")
+  buttons.forEach((button) => {
+    button.addEventListener("click", () => {
+      buttons.forEach((item) => item.classList.toggle("active", item === button))
+      views.forEach((view) => view.classList.toggle("active", view.id === `view-${button.dataset.view}`))
+    })
+  })
+</script>
+</body>
+</html>

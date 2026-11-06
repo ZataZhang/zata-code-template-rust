@@ -5,11 +5,16 @@ use std::net::IpAddr;
 
 use super::ComposeEnvironment;
 
-const ALLOWED_KEYS: [&str; 13] = [
+const ALLOWED_KEYS: [&str; 18] = [
     "POSTGRES_PASSWORD",
     "REDIS_PASSWORD",
     "AGENT_TRACING_DB_PASSWORD",
     "AGENT_TRACING_PRODUCERS_JSON",
+    "AGENT_DB_PASSWORD",
+    "AGENT_WEB_SERVICE_TOKEN",
+    "AGENT_ADMIN_SERVICE_TOKEN",
+    "AGENT_TRACING_PRODUCER_TOKEN",
+    "AGENT_PLATFORM_ADMIN_IDS",
     "ADMIN_BOOTSTRAP_USERNAME",
     "ADMIN_BOOTSTRAP_PASSWORD",
     "COOKIE_SECURE",
@@ -21,10 +26,14 @@ const ALLOWED_KEYS: [&str; 13] = [
     "LOG_FORMAT",
 ];
 
-const REQUIRED_KEYS: [&str; 3] = [
+const REQUIRED_KEYS: [&str; 7] = [
     "POSTGRES_PASSWORD",
     "REDIS_PASSWORD",
     "AGENT_TRACING_DB_PASSWORD",
+    "AGENT_DB_PASSWORD",
+    "AGENT_WEB_SERVICE_TOKEN",
+    "AGENT_ADMIN_SERVICE_TOKEN",
+    "AGENT_TRACING_PRODUCER_TOKEN",
 ];
 const MAX_COMPOSE_PROPERTIES_BYTES: usize = 64 * 1024;
 
@@ -175,15 +184,15 @@ mod tests {
     #[test]
     fn comments_and_empty_lines_are_ignored() {
         let environment_variables = parsed_values(
-            "# compose settings\n\n! ignored comment\nPOSTGRES_PASSWORD=pg\nREDIS_PASSWORD=redis\nAGENT_TRACING_DB_PASSWORD=trace\n",
+            "# compose settings\n\n! ignored comment\nPOSTGRES_PASSWORD=pg\nREDIS_PASSWORD=redis\nAGENT_TRACING_DB_PASSWORD=trace\nAGENT_DB_PASSWORD=agentdb\nAGENT_WEB_SERVICE_TOKEN=webtoken\nAGENT_ADMIN_SERVICE_TOKEN=admintoken\nAGENT_TRACING_PRODUCER_TOKEN=producertoken\n",
         );
-        assert_eq!(environment_variables.len(), 3);
+        assert_eq!(environment_variables.len(), 7);
     }
 
     #[test]
     fn values_are_kept_literally_including_shell_syntax_equals_and_spaces() {
         let environment_variables = parsed_values(
-            "POSTGRES_PASSWORD=pg\nREDIS_PASSWORD=redis\nAGENT_TRACING_DB_PASSWORD=trace\nADMIN_BOOTSTRAP_PASSWORD=literal = ${NO_EXPANSION} with spaces\n",
+            "POSTGRES_PASSWORD=pg\nREDIS_PASSWORD=redis\nAGENT_TRACING_DB_PASSWORD=trace\nAGENT_DB_PASSWORD=agentdb\nAGENT_WEB_SERVICE_TOKEN=webtoken\nAGENT_ADMIN_SERVICE_TOKEN=admintoken\nAGENT_TRACING_PRODUCER_TOKEN=producertoken\nADMIN_BOOTSTRAP_PASSWORD=literal = ${NO_EXPANSION} with spaces\n",
         );
         let actual_password = environment_variables
             .get("ADMIN_BOOTSTRAP_PASSWORD")
@@ -256,13 +265,13 @@ mod tests {
     fn non_secret_compose_values_are_validated_before_process_launch() {
         assert!(matches!(
             parse_properties(
-                "POSTGRES_PASSWORD=pg\nREDIS_PASSWORD=redis\nAGENT_TRACING_DB_PASSWORD=trace\nWEB_PORT=0\n"
+                "POSTGRES_PASSWORD=pg\nREDIS_PASSWORD=redis\nAGENT_TRACING_DB_PASSWORD=trace\nAGENT_DB_PASSWORD=agentdb\nAGENT_WEB_SERVICE_TOKEN=webtoken\nAGENT_ADMIN_SERVICE_TOKEN=admintoken\nAGENT_TRACING_PRODUCER_TOKEN=producertoken\nWEB_PORT=0\n"
             ),
             Err(ComposePropertiesError::InvalidTypedValue { key: "WEB_PORT" })
         ));
         assert!(matches!(
             parse_properties(
-                "POSTGRES_PASSWORD=pg\nREDIS_PASSWORD=redis\nAGENT_TRACING_DB_PASSWORD=trace\nCOOKIE_SECURE=yes\n"
+                "POSTGRES_PASSWORD=pg\nREDIS_PASSWORD=redis\nAGENT_TRACING_DB_PASSWORD=trace\nAGENT_DB_PASSWORD=agentdb\nAGENT_WEB_SERVICE_TOKEN=webtoken\nAGENT_ADMIN_SERVICE_TOKEN=admintoken\nAGENT_TRACING_PRODUCER_TOKEN=producertoken\nCOOKIE_SECURE=yes\n"
             ),
             Err(ComposePropertiesError::InvalidTypedValue {
                 key: "COOKIE_SECURE"
@@ -270,13 +279,13 @@ mod tests {
         ));
         assert!(matches!(
             parse_properties(
-                "POSTGRES_PASSWORD=pg\nREDIS_PASSWORD=redis\nAGENT_TRACING_DB_PASSWORD=trace\nLOG_FORMAT=debug\n"
+                "POSTGRES_PASSWORD=pg\nREDIS_PASSWORD=redis\nAGENT_TRACING_DB_PASSWORD=trace\nAGENT_DB_PASSWORD=agentdb\nAGENT_WEB_SERVICE_TOKEN=webtoken\nAGENT_ADMIN_SERVICE_TOKEN=admintoken\nAGENT_TRACING_PRODUCER_TOKEN=producertoken\nLOG_FORMAT=debug\n"
             ),
             Err(ComposePropertiesError::InvalidTypedValue { key: "LOG_FORMAT" })
         ));
         assert!(matches!(
             parse_properties(
-                "POSTGRES_PASSWORD=pg\nREDIS_PASSWORD=redis\nAGENT_TRACING_DB_PASSWORD=trace\nTRUSTED_PROXY_CIDR=127.0.0.1;\n"
+                "POSTGRES_PASSWORD=pg\nREDIS_PASSWORD=redis\nAGENT_TRACING_DB_PASSWORD=trace\nAGENT_DB_PASSWORD=agentdb\nAGENT_WEB_SERVICE_TOKEN=webtoken\nAGENT_ADMIN_SERVICE_TOKEN=admintoken\nAGENT_TRACING_PRODUCER_TOKEN=producertoken\nTRUSTED_PROXY_CIDR=127.0.0.1;\n"
             ),
             Err(ComposePropertiesError::InvalidTypedValue {
                 key: "TRUSTED_PROXY_CIDR"
@@ -287,7 +296,7 @@ mod tests {
     #[test]
     fn valid_ports_and_proxy_cidrs_are_accepted() {
         let environment_variables = parsed_values(
-            "POSTGRES_PASSWORD=pg\nREDIS_PASSWORD=redis\nAGENT_TRACING_DB_PASSWORD=trace\nWEB_PORT=3000\nADMIN_PORT=8081\nTRACING_UI_PORT=8082\nACCOUNTS_PORT=8083\nCOOKIE_SECURE=false\nLOG_FORMAT=json\nTRUSTED_PROXY_CIDR=172.16.0.0/12\n",
+            "POSTGRES_PASSWORD=pg\nREDIS_PASSWORD=redis\nAGENT_TRACING_DB_PASSWORD=trace\nAGENT_DB_PASSWORD=agentdb\nAGENT_WEB_SERVICE_TOKEN=webtoken\nAGENT_ADMIN_SERVICE_TOKEN=admintoken\nAGENT_TRACING_PRODUCER_TOKEN=producertoken\nWEB_PORT=3000\nADMIN_PORT=8081\nTRACING_UI_PORT=8082\nACCOUNTS_PORT=8083\nCOOKIE_SECURE=false\nLOG_FORMAT=json\nTRUSTED_PROXY_CIDR=172.16.0.0/12\n",
         );
         assert_eq!(
             environment_variables.get("WEB_PORT").map(String::as_str),

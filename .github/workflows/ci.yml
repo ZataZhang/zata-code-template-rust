@@ -177,6 +177,10 @@ jobs:
         env:
           SHOT_DIR: ${{ runner.temp }}/e2e-shots
         run: just web-e2e
+      - name: Run Agent service end-to-end scenarios
+        env:
+          SHOT_DIR: ${{ runner.temp }}/agent-e2e-shots
+        run: just agent-e2e
       - name: Upload screenshots
         if: failure()
         uses: actions/upload-artifact@v7
@@ -203,7 +207,7 @@ jobs:
       - name: Run isolated Nacos and Compose validation
         run: python3 scripts/ci-nacos-stack.py
 
-  # 五个独立服务镜像能构建出来（不推送）。
+  # 六个独立服务镜像能构建出来（不推送）。
   docker:
     name: Docker images build
     runs-on: ubuntu-latest
@@ -216,6 +220,8 @@ jobs:
         run: docker build -f frontends/public/Dockerfile --build-arg BACKEND_URL=http://accounts:8080 -t tpl-web:ci .
       - name: Build admin frontend image
         run: docker build -t tpl-admin:ci frontends/admin
+      - name: Build Agent service image
+        run: docker build -f services/agent/Dockerfile -t tpl-agent:ci .
       - name: Build Agent tracing service image
         run: docker build -f services/agent-tracing/Dockerfile -t tpl-agent-tracing:ci .
       - name: Build tracing frontend image

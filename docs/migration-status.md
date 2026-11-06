@@ -2,7 +2,7 @@
 
 本仓库是 `zata_code_template`（Python / FastAPI）的 Rust 版。迁移**分阶段**进行，先做一条最小竖切跑通，再逐步搬。本页记录已经迁移的、刻意推迟的，以及推迟的原因，便于接着做。
 
-> 状态更新日期：2026-10-29。阶段 1–6 已完成；账号与认证作为第一个 `accounts-service` 独立部署，并有可被不同宿主安装的账号 UI 包。第二个后端服务 `agent-tracing` 与独立前端 `frontends/tracing/` 已实现；构建与静态验证结果及人工验收状态以对应 PRD 为准。
+> 状态更新日期：2026-11-04。阶段 1–7 已完成；账号与认证作为第一个 `accounts-service` 独立部署，并有可被不同宿主安装的账号 UI 包。第二个后端服务 `agent-tracing` 与独立前端 `frontends/tracing/` 已实现。第三个后端服务 `agent-service` 与 public/admin Agent 界面已实现，组织/Runtime/Agent/Session/Run 能力从 ai-assistant 迁移到单一服务；构建与验证结果及人工验收状态以对应 PRD 为准。
 
 ## 已迁移
 
@@ -103,8 +103,21 @@
 | 通用 producer 接口 | `/api/v1/ingest/runs/{run_id}/events`、`event-batch.schema.json` | 有界 HTTP/JSON batches、source/project 固定凭据、连续序号、持久化 checkpoint、精确重试幂等及稳定错误码；接入细节见 `services/agent-tracing/README.md` |
 | Run / Thread 诊断 | `services/agent-tracing/crates/core/src/projection.rs`、`crates/api/src/admin/` | 追加事件投影成 Run/span 树与 Thread 账本；管理员 Cookie 经 accounts 公开 HTTP 校验；终态事件支持受限原始导出 |
 | 独立 tracing 前端 | `frontends/tracing/` | Vite/React 独立项目和镜像，提供 Run/Thread 筛选、五泳道时间轴、详情检查器、内容搜索、导出；nginx 同源代理认证、查询与 producer 接入 |
-| 完整部署与备份 | `docker-compose.yml`、`scripts/lib/db-{backup,restore}.sh`、`justfile` | tracing 独立数据库和 volume；本地、Compose、CI/CD 与备份/恢复分别覆盖两个后端及三个独立 UI 入口 |
+| 完整部署与备份 | `docker-compose.yml`、`scripts/lib/db-{backup,restore}.sh`、`justfile` | tracing 独立数据库和 volume；本地、Compose、CI/CD 与备份/恢复分别覆盖 tracing 后端及三个独立 UI 入口（Agent 服务的同类覆盖见阶段 8） |
 | 配置与文档 | `deploy/nacos/rust-study-compose.properties.example`、`docs/guides/`、`docs/architecture/system-design.md` | producer secrets、服务边界、接入契约、代理、安全和备份要求同步记录；验证与人工验收进度见 pending PRD |
+
+### 阶段 8：Agent 服务与 Runtime 能力迁移（2026-11-04）
+
+| 内容 | 位置 | 说明 |
+|---|---|---|
+| 独立 Agent 后端 | `services/agent/`、`services/agent/migrations/` | 独立 Rust 服务、`tpl-agent-{core,api,engines,infrastructure}` 私有 crate、独立 `agent` 数据库与 Blob 卷；不依赖 accounts/tracing 私有 crate，也不跨库查询 |
+| 组织与授权 | `services/agent/crates/core/src/{organization,agent_catalog,skill_access,audit}.rs` | 组织/部门/membership、显式组织管理员 scope、Agent allow/deny 规则（deny 优先、部门不继承）、Auto 入口策略、受治理 delegation 与审计；平台管理员不自动获得组织 scope |
+| Runtime 与执行 | `services/agent/crates/engines/`、`crates/core/src/runtime_catalog.rs` | builtin Sandbox（受限平台工具、步骤预算，不取得容器/宿主/网络权限）与 external A2A 1.0 JSON-RPC（Card 探测、流式/单次消息、取消、凭据别名）；Agent 创建时绑定 Runtime，后续不可改绑 |
+| Canonical Session/Run | `crates/core/src/{session,run,run_events}.rs`、`crates/api/src/routes/public.rs`、`src/dispatch.rs` | 幂等 Session/消息创建、执行快照、持久单调事件、SSE 续读、协作式取消；后台调度用幂等闸门防重复执行；Run 不依赖 tracing 完成 |
+| Skill、资源与产物 | `crates/core/src/{resources,skill_access}.rs`、`crates/infrastructure/src/storage.rs` | 组织级 Skill 与资产授权、用户资源与 Run 产物的受控 Blob 存储、owner 校验、MIME 与大小上限 |
+| tracing outbox | `crates/core/src/event_contract.rs`、`crates/infrastructure/src/tracing_outbox.rs` | 本地事务写 Run 事件与 outbox；白名单事件/低敏字段、checksum 与敏感键拒绝、脱敏内容、批次/字节上限、持久序号幂等重试；tracing 故障不阻塞 Run |
+| 身份与前端 | `crates/api/src/extract.rs`、`crates/infrastructure/src/identity.rs`、`frontends/public/app/(app)/app/agents/`、`frontends/admin/src/features/{organizations,agent-runtimes,agents}/`、`frontends/public/app/api/agent/`、`frontends/admin/nginx.conf` | 服务 Bearer + accounts Cookie 双重校验；public 由 Next Route Handler、admin 由 nginx 在服务端注入 token；public 工作台与 admin 组织/Runtime/Agent 管理 |
+| 部署与验证 | `docker-compose.yml`、`docker-compose.testing.yml`、`justfile`、`scripts/agent-e2e*`、`.github/workflows/{ci,cd}.yml`、`deploy/nacos/rust-study-compose.properties.example` | 三后端/三 PostgreSQL/三前端 Compose；Agent 独立镜像、健康检查、Blob 卷与备份恢复；真实浏览器/API 场景覆盖生命周期、授权/脱敏与 tracing 中断恢复 |
 
 ### 阶段 4：PRD 工具链（用 Rust 重写）
 
@@ -133,7 +146,7 @@
 | 「登出所有设备」、会话列表 | 需要按用户索引会话（Redis 里目前只有 令牌哈希→用户 ID 的映射） | 有需求时 |
 | 请求 ID / 关联日志中间件 | Python 版有 request context；目前只有 `TraceLayer` | 排障遇到困难时 |
 | `/metrics`（Prometheus）与完整可观测性栈 | 当前 tracing 提供业务 Agent Run/Thread 诊断与可选 OTLP traces，不提供 Prometheus metrics 或通用服务 APM | 有明确指标采集需求时 |
-| 沙箱执行后端（filesystem / Docker / E2B） | 面向特定的 Agent 场景，不是通用底座 | 有具体需求时再做 |
+| 容器级沙箱执行后端（filesystem / Docker / E2B） | 当前 Agent 服务只提供进程内受限平台工具，不取得容器、宿主进程或网络执行权限 | 有具体需求时再做 |
 | `just ai implement`（AI 执行器 + 独立 verifier 的编排）、证据密钥扫描、人审清单交互 HTML | PRD 工具链里**没有**移植的部分，见阶段 4 | 有具体需求时 |
 | Python 版 `justfile.shared` 里的 `worktree`、`e2e`、`release`、`ai *` | 体量大，且很多绑定 uv/pytest/Alembic；Rust 已有轻量的 copy/sync 入口，但未照搬这些配方 | 按需逐个搬 |
 | Python 版发布 zip 包（模板自身的分发方式） | 这里的 `cd.yml` 发布的是镜像；模板自己的 zip 分发另议 | 决定模板分发方式后 |

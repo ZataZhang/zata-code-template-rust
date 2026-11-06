@@ -1,0 +1,883 @@
+openapi: 3.1.0
+info:
+  title: Agent Service API
+  version: 0.1.0
+  description: |
+    独立 Agent 微服务的公开接口：组织目录、Business Agent、Session/Canonical Run、
+    资源与产物。调用服务必须携带服务 Bearer token；最终用户与管理员身份经 accounts
+    Cookie 校验。错误响应统一为 `{"error":{"code","message"}}`。
+servers:
+  - url: /
+paths:
+  /live:
+    get:
+      summary: 存活探针
+      responses:
+        "200":
+          description: 进程可响应
+  /health:
+    get:
+      summary: 基本信息
+      responses:
+        "200":
+          description: 服务名与版本
+  /ready:
+    get:
+      summary: 就绪探针
+      responses:
+        "200":
+          description: 依赖就绪
+        "503":
+          description: 依赖未就绪
+  /api/v1/organizations:
+    get:
+      summary: 列出当前用户加入的组织
+      responses:
+        "200":
+          description: 组织列表
+  /api/v1/organizations/{organization_id}/agents:
+    get:
+      summary: 列出用户可运行的 Agent
+      parameters:
+        - $ref: "#/components/parameters/OrganizationId"
+      responses:
+        "200":
+          description: Agent 目录
+  /api/v1/agents/{agent_id}:
+    get:
+      summary: 读取单个 Agent 的 public 目录项
+      parameters:
+        - $ref: "#/components/parameters/AgentId"
+      responses:
+        "200":
+          description: Agent 目录项
+  /api/v1/agents/{agent_id}/skills:
+    get:
+      summary: 列出用户可选择的 Skill
+      parameters:
+        - $ref: "#/components/parameters/AgentId"
+      responses:
+        "200":
+          description: Skill 列表
+  /api/v1/organizations/{organization_id}/sessions:
+    get:
+      summary: 列出 Session
+      parameters:
+        - $ref: "#/components/parameters/OrganizationId"
+      responses:
+        "200":
+          description: Session 列表
+    post:
+      summary: 创建 Session
+      parameters:
+        - $ref: "#/components/parameters/OrganizationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                agent_id:
+                  type: string
+                  format: uuid
+                  nullable: true
+                title:
+                  type: string
+                  nullable: true
+      responses:
+        "201":
+          description: 已创建
+  /api/v1/sessions/{session_id}:
+    get:
+      summary: 读取 Session、消息与 Run 历史
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          description: Session 详情
+    patch:
+      summary: 更新 Session 标题
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title:
+                  type: string
+      responses:
+        "200":
+          description: 更新后的 Session
+  /api/v1/sessions/{session_id}/messages:
+    post:
+      summary: 发送消息并创建 Canonical Run
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            maxLength: 128
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                agent_id:
+                  type: string
+                  format: uuid
+                  nullable: true
+                content:
+                  type: string
+                resource_ids:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+                skill_ids:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+      responses:
+        "201":
+          description: 新建 Run
+        "200":
+          description: 幂等重放原 Run
+        "409":
+          description: 幂等键冲突
+  /api/v1/runs/{run_id}:
+    get:
+      summary: 读取 Run
+      parameters:
+        - $ref: "#/components/parameters/RunId"
+      responses:
+        "200":
+          description: Run 记录
+  /api/v1/runs/{run_id}/events:
+    get:
+      summary: 轮询持久事件
+      parameters:
+        - $ref: "#/components/parameters/RunId"
+        - name: after_seq
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+      responses:
+        "200":
+          description: 事件列表
+  /api/v1/runs/{run_id}/stream:
+    get:
+      summary: SSE 事件流
+      parameters:
+        - $ref: "#/components/parameters/RunId"
+        - name: after_seq
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        "200":
+          description: text/event-stream
+  /api/v1/runs/{run_id}/cancel:
+    post:
+      summary: 协作式取消 Run
+      parameters:
+        - $ref: "#/components/parameters/RunId"
+      responses:
+        "200":
+          description: 取消结果
+  /api/v1/runs/{run_id}/artifacts:
+    get:
+      summary: 列出 Run 产物
+      parameters:
+        - $ref: "#/components/parameters/RunId"
+      responses:
+        "200":
+          description: 产物列表
+  /api/v1/artifacts/{artifact_id}:
+    get:
+      summary: 下载产物
+      parameters:
+        - name: artifact_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 二进制产物
+  /api/v1/organizations/{organization_id}/resources:
+    get:
+      summary: 列出用户资源
+      parameters:
+        - $ref: "#/components/parameters/OrganizationId"
+      responses:
+        "200":
+          description: 资源列表
+    post:
+      summary: 上传用户资源
+      parameters:
+        - $ref: "#/components/parameters/OrganizationId"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "201":
+          description: 资源元数据
+  /api/v1/resources/{resource_id}:
+    get:
+      summary: 下载用户资源
+      parameters:
+        - name: resource_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 二进制资源
+    delete:
+      summary: 软删除用户资源
+      parameters:
+        - name: resource_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: 已删除
+  /admin/api/me:
+    get:
+      summary: 当前管理员身份
+      responses:
+        "200":
+          description: 管理员身份与平台管理员标记
+  /admin/api/organizations:
+    get:
+      summary: 列出可管理组织
+      responses:
+        "200":
+          description: 组织列表
+    post:
+      summary: 创建组织（仅平台管理员）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [slug, display_name]
+              properties:
+                slug:
+                  type: string
+                display_name:
+                  type: string
+      responses:
+        "201":
+          description: 已创建
+  /admin/api/organizations/{organization_id}:
+    get:
+      summary: 读取组织
+      parameters:
+        - $ref: "#/components/parameters/OrganizationId"
+      responses:
+        "200":
+          description: 组织
+  /admin/api/organizations/{organization_id}/units:
+    get:
+      summary: 列出部门
+      parameters:
+        - $ref: "#/components/parameters/OrganizationId"
+      responses:
+        "200":
+          description: 部门列表
+    post:
+      summary: 创建部门
+      parameters:
+        - $ref: "#/components/parameters/OrganizationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+      responses:
+        "201":
+          description: 已创建
+  /admin/api/organizations/{organization_id}/units/{unit_id}:
+    delete:
+      summary: 删除部门
+      parameters:
+        - $ref: "#/components/parameters/OrganizationId"
+        - name: unit_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: 已删除
+  /admin/api/organizations/{organization_id}/memberships:
+    get:
+      summary: 列出成员
+      parameters:
+        - $ref: "#/components/parameters/OrganizationId"
+      responses:
+        "200":
+          description: 成员列表
+    post:
+      summary: 新增或更新成员关系
+      parameters:
+        - $ref: "#/components/parameters/OrganizationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id]
+              properties:
+                user_id:
+                  type: integer
+                  format: int64
+                unit_id:
+                  type: string
+                  format: uuid
+                  nullable: true
+                display_name:
+                  type: string
+                  nullable: true
+      responses:
+        "200":
+          description: 成员关系
+  /admin/api/organizations/{organization_id}/memberships/{user_id}:
+    delete:
+      summary: 删除成员关系
+      parameters:
+        - $ref: "#/components/parameters/OrganizationId"
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "204":
+          description: 已删除
+  /admin/api/organizations/{organization_id}/admin-scopes:
+    get:
+      summary: 列出管理员 scope
+      parameters:
+        - $ref: "#/components/parameters/OrganizationId"
+      responses:
+        "200":
+          description: scope 列表
+    post:
+      summary: 授予组织 scope（仅平台管理员）
+      parameters:
+        - $ref: "#/components/parameters/OrganizationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [admin_user_id]
+              properties:
+                admin_user_id:
+                  type: integer
+                  format: int64
+      responses:
+        "201":
+          description: 已授予
+  /admin/api/organizations/{organization_id}/admin-scopes/{admin_user_id}:
+    delete:
+      summary: 撤销组织 scope（仅平台管理员）
+      parameters:
+        - $ref: "#/components/parameters/OrganizationId"
+        - name: admin_user_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "204":
+          description: 已撤销
+  /admin/api/organizations/{organization_id}/runtimes:
+    get:
+      summary: 列出可见 Runtime
+      parameters:
+        - $ref: "#/components/parameters/OrganizationId"
+      responses:
+        "200":
+          description: Runtime 列表
+    post:
+      summary: 登记外部 A2A Runtime
+      parameters:
+        - $ref: "#/components/parameters/OrganizationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, display_name, endpoint_url]
+              properties:
+                name:
+                  type: string
+                display_name:
+                  type: string
+                endpoint_url:
+                  type: string
+                  format: uri
+                credential_alias:
+                  type: string
+                  nullable: true
+      responses:
+        "201":
+          description: 已登记并完成首次探测
+  /admin/api/organizations/{organization_id}/runtimes/{runtime_id}/refresh:
+    post:
+      summary: 重新探测外部 Runtime
+      parameters:
+        - $ref: "#/components/parameters/OrganizationId"
+        - name: runtime_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 更新后的 Runtime
+  /admin/api/organizations/{organization_id}/agents:
+    get:
+      summary: 列出组织 Agent
+      parameters:
+        - $ref: "#/components/parameters/OrganizationId"
+      responses:
+        "200":
+          description: Agent 列表
+    post:
+      summary: 创建 Agent 并固定 Runtime binding
+      parameters:
+        - $ref: "#/components/parameters/OrganizationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [runtime_connection_id, name, display_name, prompt]
+              properties:
+                runtime_connection_id:
+                  type: string
+                  format: uuid
+                name:
+                  type: string
+                display_name:
+                  type: string
+                description:
+                  type: string
+                prompt:
+                  type: string
+      responses:
+        "201":
+          description: 已创建
+  /admin/api/organizations/{organization_id}/agents/{agent_id}:
+    get:
+      summary: 读取 Agent
+      parameters:
+        - $ref: "#/components/parameters/OrganizationId"
+        - $ref: "#/components/parameters/AgentId"
+      responses:
+        "200":
+          description: Agent
+    put:
+      summary: 更新 Agent descriptor
+      parameters:
+        - $ref: "#/components/parameters/OrganizationId"
+        - $ref: "#/components/parameters/AgentId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [display_name, prompt, enabled]
+              properties:
+                display_name:
+                  type: string
+                description:
+                  type: string
+                prompt:
+                  type: string
+                enabled:
+                  type: boolean
+      responses:
+        "200":
+          description: 更新后的 Agent
+  /admin/api/organizations/{organization_id}/agents/{agent_id}/overview:
+    get:
+      summary: 读取 Agent 概览（规则、策略与 Skill）
+      parameters:
+        - $ref: "#/components/parameters/OrganizationId"
+        - $ref: "#/components/parameters/AgentId"
+      responses:
+        "200":
+          description: Agent 概览
+  /admin/api/organizations/{organization_id}/agents/{agent_id}/access-rules:
+    get:
+      summary: 列出访问规则
+      parameters:
+        - $ref: "#/components/parameters/OrganizationId"
+        - $ref: "#/components/parameters/AgentId"
+      responses:
+        "200":
+          description: 规则列表
+    put:
+      summary: 替换访问规则
+      parameters:
+        - $ref: "#/components/parameters/OrganizationId"
+        - $ref: "#/components/parameters/AgentId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [rules]
+              properties:
+                rules:
+                  type: array
+                  items:
+                    type: object
+                    required: [effect, subject]
+                    properties:
+                      effect:
+                        type: string
+                        enum: [allow, deny]
+                      subject:
+                        type: object
+                        required: [kind, id]
+                        properties:
+                          kind:
+                            type: string
+                            enum: [organization, unit, user]
+                          id:
+                            oneOf:
+                              - type: string
+                                format: uuid
+                              - type: integer
+                                format: int64
+      responses:
+        "200":
+          description: 规则列表
+  /admin/api/organizations/{organization_id}/agents/{agent_id}/entry-policy:
+    get:
+      summary: 读取入口策略
+      parameters:
+        - $ref: "#/components/parameters/OrganizationId"
+        - $ref: "#/components/parameters/AgentId"
+      responses:
+        "200":
+          description: 入口策略或 null
+    put:
+      summary: 新增或更新入口策略
+      parameters:
+        - $ref: "#/components/parameters/OrganizationId"
+        - $ref: "#/components/parameters/AgentId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [auto_visible, priority]
+              properties:
+                auto_visible:
+                  type: boolean
+                priority:
+                  type: integer
+      responses:
+        "200":
+          description: 入口策略
+  /admin/api/organizations/{organization_id}/agents/{agent_id}/delegation-policy:
+    get:
+      summary: 读取委派策略
+      parameters:
+        - $ref: "#/components/parameters/OrganizationId"
+        - $ref: "#/components/parameters/AgentId"
+      responses:
+        "200":
+          description: 委派策略或 null
+    put:
+      summary: 新增或更新委派策略
+      parameters:
+        - $ref: "#/components/parameters/OrganizationId"
+        - $ref: "#/components/parameters/AgentId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [child_agent_ids, max_depth, max_child_runs]
+              properties:
+                child_agent_ids:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+                max_depth:
+                  type: integer
+                  minimum: 0
+                  maximum: 255
+                max_child_runs:
+                  type: integer
+                  minimum: 0
+                  maximum: 255
+      responses:
+        "200":
+          description: 委派策略
+  /admin/api/organizations/{organization_id}/agents/{agent_id}/skills:
+    get:
+      summary: 列出已授权 Skill ID
+      parameters:
+        - $ref: "#/components/parameters/OrganizationId"
+        - $ref: "#/components/parameters/AgentId"
+      responses:
+        "200":
+          description: Skill ID 列表
+    put:
+      summary: 替换 Agent 的 Skill 授权
+      parameters:
+        - $ref: "#/components/parameters/OrganizationId"
+        - $ref: "#/components/parameters/AgentId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [skill_ids]
+              properties:
+                skill_ids:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+      responses:
+        "200":
+          description: 授权后的 Skill 列表
+  /admin/api/organizations/{organization_id}/skills:
+    get:
+      summary: 列出组织 Skill
+      parameters:
+        - $ref: "#/components/parameters/OrganizationId"
+      responses:
+        "200":
+          description: Skill 列表
+    post:
+      summary: 创建 Skill
+      parameters:
+        - $ref: "#/components/parameters/OrganizationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, instructions]
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                instructions:
+                  type: string
+      responses:
+        "201":
+          description: 已创建
+  /admin/api/organizations/{organization_id}/skills/{skill_id}:
+    put:
+      summary: 更新 Skill
+      parameters:
+        - $ref: "#/components/parameters/OrganizationId"
+        - name: skill_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [instructions, enabled]
+              properties:
+                description:
+                  type: string
+                instructions:
+                  type: string
+                enabled:
+                  type: boolean
+      responses:
+        "200":
+          description: 更新后的 Skill
+  /admin/api/organizations/{organization_id}/skills/{skill_id}/assets:
+    get:
+      summary: 列出 Skill 资产
+      parameters:
+        - $ref: "#/components/parameters/OrganizationId"
+        - $ref: "#/components/parameters/SkillId"
+      responses:
+        "200":
+          description: 资产列表
+    post:
+      summary: 上传 Skill 资产
+      parameters:
+        - $ref: "#/components/parameters/OrganizationId"
+        - $ref: "#/components/parameters/SkillId"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "201":
+          description: 资产元数据
+  /admin/api/organizations/{organization_id}/skills/{skill_id}/assets/{asset_id}:
+    get:
+      summary: 下载 Skill 资产
+      parameters:
+        - $ref: "#/components/parameters/OrganizationId"
+        - $ref: "#/components/parameters/SkillId"
+        - name: asset_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 二进制资产
+    delete:
+      summary: 删除 Skill 资产
+      parameters:
+        - $ref: "#/components/parameters/OrganizationId"
+        - $ref: "#/components/parameters/SkillId"
+        - name: asset_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: 已删除
+  /admin/api/organizations/{organization_id}/audit:
+    get:
+      summary: 列出组织审计记录
+      parameters:
+        - $ref: "#/components/parameters/OrganizationId"
+      responses:
+        "200":
+          description: 审计记录
+components:
+  securitySchemes:
+    serviceBearer:
+      type: http
+      scheme: bearer
+      description: 逐服务凭据；浏览器不持有，由前端服务端代理注入。
+    userCookie:
+      type: apiKey
+      in: header
+      name: Cookie
+      description: accounts public 会话 Cookie，经 accounts `/auth/me` 校验。
+    adminCookie:
+      type: apiKey
+      in: header
+      name: Cookie
+      description: accounts 管理员会话 Cookie，经 accounts `/admin/auth/me` 校验。
+  parameters:
+    OrganizationId:
+      name: organization_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    AgentId:
+      name: agent_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    SessionId:
+      name: session_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    RunId:
+      name: run_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    SkillId:
+      name: skill_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+security:
+  - serviceBearer: []

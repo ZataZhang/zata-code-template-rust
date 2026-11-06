@@ -1,6 +1,6 @@
 # Rust 工程模板
 
-面向 Rust Web 服务的可演进工程模板：**axum + tokio + sqlx（PostgreSQL）**。当前有两个独立后端微服务：第一个 `accounts-service`（`services/accounts/`）负责认证，第二个 `agent-tracing`（`services/agent-tracing/`）负责 Agent Run 事件接入、轨迹投影与查询。它们各自拥有数据库、迁移、配置和镜像。
+面向 Rust Web 服务的可演进工程模板：**axum + tokio + sqlx（PostgreSQL）**。当前有三个独立后端微服务：`accounts-service`（`services/accounts/`）负责认证；`agent-service`（`services/agent/`）负责组织、Runtime、Business Agent、Session 与 Canonical Run；`agent-tracing`（`services/agent-tracing/`）负责 Agent Run 事件接入、轨迹投影与查询。它们各自拥有数据库、迁移、配置和镜像。
 
 这是 [`zata_code_template`](../zata_code_template)（Python / FastAPI）的 Rust 版，正在分阶段迁移，进度见 [`docs/migration-status.md`](docs/migration-status.md)。
 
@@ -12,18 +12,19 @@
 - **登录/注册限流**：按 IP 和按账号计数（存 Redis），超限返回 429 + `Retry-After`；不泄露账号是否存在，默认不信任可伪造的 `X-Forwarded-For`
 - **数据库迁移**：`sqlx migrate`，启动时自动执行，表和列带注释
 - **可复用账号服务**：独立二进制 `accounts-service`，拥有账号数据、迁移和 Redis 会话；新应用可独立部署同一实现，也可明确选择共享账号域。当前共享实例没有 tenant/app 隔离，详见[账号服务接入指南](docs/guides/accounts-integration.md)
+- **Agent 微服务**：独立二进制 `agent-service`，拥有组织/部门/membership、builtin Sandbox 与外部 A2A 1.0 Runtime、Business Agent 与访问规则、Session/Canonical Run（幂等创建、快照、持久事件/SSE、协作式取消）、Skill/资源/产物和受治理委派；用户与管理员身份经 accounts 公开 HTTP 校验，事件经本地 outbox 投递到 tracing
 - **Agent tracing 微服务**：独立二进制 `agent-tracing-service`，通过绑定 producer source/project 的版本化 HTTP/JSON 事件批次接收流式更新，提供 durable ack、幂等续传、Run/Thread 查询、内容级管理员诊断与受限原始事件导出；OTLP/HTTP 可选且默认关闭
 - **配置**：`config.toml` 默认值 < 可选 Nacos TOML < 环境变量；本地 Nacos 连接凭据放 `.env.local`；密码不会出现在日志里
 - **日志**：`tracing`，文本或 JSON
 - **优雅退出**：收到 Ctrl+C / SIGTERM 后处理完在途请求再退出
 - **工程工作流**：`just` 统一入口、clippy 零警告、`missing_docs` 强制公共 API 写文档、AI 协作规范（`AGENTS.md`、`docs/ai-standards/`）
-- **部署**：账号与 tracing 服务有各自的非 root 镜像与 PostgreSQL；`just stack-up` 启动整栈，`just tracing-up` 单独启动 tracing API、数据库和 UI；数据库备份/恢复覆盖两个服务；打 `v*` tag 会分别构建五个服务镜像并推送到 GHCR
+- **部署**：账号、Agent 与 tracing 服务有各自的非 root 镜像与 PostgreSQL；`just stack-up` 启动整栈，`just agent-up` / `just tracing-up` 单独启动对应后端；数据库备份/恢复覆盖三个服务；打 `v*` tag 会分别构建六个服务镜像并推送到 GHCR
 
 - **前台站点**（`frontends/public/`，Next.js）：营销页、注册、登录、受保护区域，中英双语；有真实浏览器端到端测试
 - **管理后台**（`frontends/admin/`，Vite + React）：管理员登录、用户列表（搜索、状态筛选、分页）、启用/停用用户，中英双语；有真实浏览器端到端测试
 - **Tracing Studio**（`frontends/tracing/`，Vite + React）：独立部署的 tracing 子服务 UI，包含 Run 列表、树形轨迹检查器、Thread 消息账本、五泳道时间轴、内容/时间筛选和终态事件下载
 
-不包含：邮箱验证、找回密码、管理员的增删与改密码、Agent runtime/模型适配器/工具执行器等，见[迁移状态](docs/migration-status.md)。
+不包含：邮箱验证、找回密码、管理员的增删与改密码，以及 ai-assistant 的 Outlook 宿主、用户 CLI、业务 Skill 内容、任意 shell/网络执行与历史数据迁移，见[迁移状态](docs/migration-status.md)。
 
 ## 架构
 
@@ -35,15 +36,21 @@ services/
 │       ├── core/            tpl-core            账号用例、规则、端口        → 不依赖其他 crate
 │       ├── engines/         tpl-engines         可插拔的平台能力（空）      → 依赖 core
 │       └── infrastructure/  tpl-infrastructure  配置、日志、账号 DB/Redis  → 依赖 core
+├── agent/           tpl-agent          Agent composition root；bin: agent-service
+│   └── crates/                          仅供 Agent 服务内部使用
+│       ├── api/             tpl-agent-api             public/admin 路由与身份提取 → 依赖 core
+│       ├── core/            tpl-agent-core            组织/Agent/Run 用例、端口、事件契约
+│       ├── engines/         tpl-agent-engines         Sandbox、A2A 1.0、Skill 运行机制
+│       └── infrastructure/  tpl-agent-infrastructure  配置、PostgreSQL、Blob、身份客户端、outbox
 └── agent-tracing/   tpl-agent-tracing   tracing composition root；bin: agent-tracing-service
     └── crates/                          仅供 tracing 服务内部使用
         ├── api/             tpl-agent-tracing-api          HTTP API → 依赖 tracing-core
         ├── core/            tpl-agent-tracing-core         通用事件契约与投影规则
         └── infrastructure/ tpl-agent-tracing-infrastructure PostgreSQL、accounts 客户端与可选 OTLP
 frontends/           独立部署的前端应用
-├── public/          Next.js 公开站点
-├── admin/           Vite/React 管理后台
-└── tracing/         Vite/React tracing 管理界面；只通过 HTTP 访问两个后端
+├── public/          Next.js 公开站点；/api/agent/* 由同源 Route Handler 代理
+├── admin/           Vite/React 管理后台；/agent-api/* 由 nginx 代理
+└── tracing/         Vite/React tracing 管理界面；只通过 HTTP 访问后端
 ```
 
 其他业务模块应在 `services/<module>/` 建立独立服务，并拥有自己的数据与迁移，不依赖账号私有 crate。详细架构见 [`docs/architecture/system-design.md`](docs/architecture/system-design.md)，跨应用接入见[账号服务接入指南](docs/guides/accounts-integration.md)。
@@ -61,14 +68,26 @@ frontends/           独立部署的前端应用
 
 ```bash
 just            # 列出所有任务
-just db-up      # 启动 accounts 测试数据库、tracing 专属数据库与 Redis
-just run        # 安装依赖并启动两个后端与独立前端；打印全部 URL
+just db-up      # 启动 accounts、Agent、tracing 测试数据库与 Redis
+just run        # 安装依赖并启动 accounts、tracing 与独立前端；打印全部 URL
 # 浏览器访问公开站点 :3000、管理后台 :5173、Tracing Studio :5174
 # accounts 健康检查：http://127.0.0.1:8080/ready；tracing：http://127.0.0.1:8090/ready
 just down       # 停止 just run 启动的进程
+# Agent 服务需单独启动（见下方），健康检查：http://127.0.0.1:8091/ready
 ```
 
-accounts 的 `8080` 和 tracing 的 `8090` 是 API 端口，根路径 `/` 没有网页，会返回 404。只启动账号 API 用 `just run backend`；本机同时运行 tracing API 和 UI 用 `just run tracing`；Docker 整栈使用 `just run docker` / `just down docker`。
+accounts 的 `8080`、Agent 的 `8091` 和 tracing 的 `8090` 是 API 端口，根路径 `/` 没有网页，会返回 404。只启动账号 API 用 `just run backend`；本机同时运行 tracing API 和 UI 用 `just run tracing`；Docker 整栈使用 `just run docker` / `just down docker`。
+
+本机直接运行 Agent 服务（需要 Agent 数据库与 accounts 已启动）：
+
+```bash
+DATABASE_URL="postgres://agent:agentpass@localhost:5435/agent_dev" \
+AGENT_SERVICE_TOKENS_JSON='[{"service_id":"web","token":"至少32字符的随机值"}]' \
+APP_AGENT__PLATFORM_ADMIN_IDS='[1]' \
+  cargo run -p tpl-agent --bin agent-service
+```
+
+`DATABASE_URL` 必填；`AGENT_TRACING_PRODUCER_TOKEN` 缺失时 outbox 不投递，但 Run 仍可完成。完整配置见[Agent 服务指南](docs/guides/agent-service.md)。
 
 只运行账号服务容器及 PostgreSQL/Redis，不启动任何前端：
 
@@ -131,7 +150,7 @@ just down
 | 命令 | 用途 |
 |---|---|
 | `just sync` | 预先下载依赖 |
-| `just run` / `just down` | 启动 / 停止本地 accounts、tracing、公开站点、两个管理界面与第二宿主 |
+| `just run` / `just down` | 启动 / 停止本地 accounts、tracing、公开站点、管理界面与第二宿主（不含 Agent 服务） |
 | `just run backend` | 只启动账号 API |
 | `just run docker` / `just down docker` | 启动 / 停止 Docker 整栈（等价于 `just stack-up` / `just stack-down`） |
 | `just view [路径]` / `just diff [路径]` | 打开本机文件与 Git 改动查看器（Rust 工具，需 Git 和浏览器） |
@@ -148,9 +167,11 @@ just down
 | `just web-e2e` | 前端：真实浏览器端到端测试，公开站点与管理后台各一套（需要 Chrome） |
 | `just web-admin-check` / `web-admin-test` | 管理后台：类型 + lint + 未使用代码 + 格式 + 构建 / 浏览器组件测试 |
 | `just web-tracing-check` | tracing 前端类型检查与生产构建 |
+| `just agent-up` / `agent-down` | 从 Nacos 读取配置，单独启动/停止 Agent 服务及其依赖后端与专属数据库 |
+| `just agent-e2e [--scenario …]` | 启动真实中间件、三后端、External A2A 替身与前端，跑浏览器/API 场景 |
 | `just tracing-up` / `tracing-down` | 从 Nacos 读取配置，单独启动/停止 tracing API、专属数据库和 tracing UI |
-| `just stack-up` / `stack-down` / `stack-reset` / `stack-logs` | 从 Nacos 读取配置，管理 accounts、tracing、三个前端、两套 PostgreSQL 与 Redis |
-| `just db-backup` / `db-restore <文件>` | 分别备份两个数据库；通过文件名前缀恢复 accounts 或 tracing 数据库 |
+| `just stack-up` / `stack-down` / `stack-reset` / `stack-logs` | 从 Nacos 读取配置，管理 accounts、Agent、tracing、三个前端、三套 PostgreSQL 与 Redis |
+| `just db-backup` / `db-restore <文件>` | 分别备份三个数据库；通过文件名前缀恢复 accounts、Agent 或 tracing 数据库 |
 | `just ci-all` | 后端 + 前端的完整检查 |
 | `just hooks` | 安装 git 钩子（提交前检查 + 提交信息检查，需要先装 pre-commit） |
 
@@ -169,6 +190,7 @@ just down
 ## 文档
 
 - [系统架构](docs/architecture/system-design.md)
+- [Agent 服务](docs/guides/agent-service.md)（身份、Runtime、Run/SSE、配置与回滚）
 - [前台站点](frontends/public/README.md)（接口契约、部署注意事项）
 - [AI 协作规范](docs/ai-standards/index.md)（入口：[`AGENTS.md`](AGENTS.md)）
 - [数据库迁移约定](docs/ai-standards/migrations.md)

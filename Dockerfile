@@ -9,6 +9,7 @@ COPY Cargo.toml Cargo.lock ./
 COPY platform ./platform
 COPY services ./services
 COPY tools ./tools
+COPY examples ./examples
 # query! 宏使用提交的离线 schema；镜像构建不需要连接数据库。
 COPY .sqlx ./.sqlx
 
@@ -21,7 +22,11 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 
 # ---- 运行阶段：只放一个二进制 + 配置文件，不带 Rust 工具链 ----
 FROM debian:bookworm-slim
-RUN useradd --system --uid 10001 --no-create-home app
+# HTTP 客户端需要系统 CA 信任库验证 HTTPS 上游。
+RUN apt-get update \
+    && apt-get install --no-install-recommends --yes ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --system --uid 10001 --no-create-home app
 WORKDIR /app
 
 COPY --from=builder /usr/local/bin/accounts-service /usr/local/bin/accounts-service

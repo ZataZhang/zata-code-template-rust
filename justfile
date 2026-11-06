@@ -7,6 +7,7 @@
 # 本地测试库的默认连接串，与 docker-compose.testing.yml 保持一致。
 local_test_database_url := "postgres://testuser:testpass@localhost:5433/testdb"
 local_test_redis_url := "redis://:redis123@localhost:6390/0"
+local_test_agent_database_url := "postgres://agent:agentpass@localhost:5435/agent_dev"
 
 default:
     @just --list
@@ -67,12 +68,14 @@ test target="":
       real)
         export TEST_DATABASE_URL="${TEST_DATABASE_URL:-{{ local_test_database_url }}}"
         export TEST_REDIS_URL="${TEST_REDIS_URL:-{{ local_test_redis_url }}}"
-        echo "使用测试库：${TEST_DATABASE_URL%%@*}@…（需要先 just db-up）"
+        export TEST_AGENT_DATABASE_URL="${TEST_AGENT_DATABASE_URL:-{{ local_test_agent_database_url }}}"
+        echo "使用测试库：${TEST_DATABASE_URL%%@*}@…、${TEST_AGENT_DATABASE_URL%%@*}@…（需要先 just db-up）"
         cargo test --workspace -- --ignored
         ;;
       all)
         export TEST_DATABASE_URL="${TEST_DATABASE_URL:-{{ local_test_database_url }}}"
         export TEST_REDIS_URL="${TEST_REDIS_URL:-{{ local_test_redis_url }}}"
+        export TEST_AGENT_DATABASE_URL="${TEST_AGENT_DATABASE_URL:-{{ local_test_agent_database_url }}}"
         cargo test --workspace -- --include-ignored
         ;;
       *)
@@ -215,12 +218,34 @@ tracing-docker-build:
     docker build -f services/agent-tracing/Dockerfile -t tpl-agent-tracing:local .
 
 # ---------------------------------------------------------------------------
+# Agent 服务（services/agent，独立进程 agent-service，端口 8091）
+# ---------------------------------------------------------------------------
+
+# 构建 Agent 服务独立镜像
+agent-docker-build:
+    docker build -f services/agent/Dockerfile -t tpl-agent:local .
+
+# 单独构建并启动 Agent 服务、专属数据库与依赖后端（accounts、agent-tracing）；不启动前端
+agent-up:
+    ./scripts/compose-config.sh compose full up -d --build --wait agent-service
+
+# 停止 Agent 服务（保留数据库与存储卷）
+agent-down:
+    ./scripts/compose-config.sh compose full stop agent-service
+
+# 真实浏览器/API 端到端：启动中间件、accounts、Agent、agent-tracing 与三个前端，跑指定场景。
+# 可用场景：organization-runtime-session-lifecycle、authorization-and-redaction、tracing-outage-recovery；
+# 省略 --scenario 时依次运行全部场景。真实外部 Runtime 需显式设置 AGENT_E2E_REAL_RUNTIME=1。
+agent-e2e *args:
+    ./scripts/agent-e2e.sh {{ args }}
+
+# ---------------------------------------------------------------------------
 # 整套服务（账号 + Agent tracing、各自 PostgreSQL、Redis 与三个独立前端入口）
 # ---------------------------------------------------------------------------
 
 # 从 Nacos 加载部署配置并构建、启动整套服务；不会生成本地部署环境文件
 stack-up:
-    ./scripts/compose-config.sh compose full up -d --build --wait
+    ./scripts/compose-config.sh compose full up -d --build --wait --wait-timeout 120
 
 # 停止整套服务（保留数据）
 stack-down:

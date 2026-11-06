@@ -1,5 +1,5 @@
 # -----------------------------------------------------------------------------
-# 整套服务：accounts 与 Agent tracing 两个后端、各自 PostgreSQL、Redis 和三个前端入口。
+# 整套服务：accounts、Agent 与 Agent tracing 三个后端、各自 PostgreSQL、Redis 和三个前端入口。
 #
 #   just stack-up      读取 Nacos 部署配置并构建、启动
 #   just stack-down    停止（保留数据）
@@ -8,8 +8,9 @@
 # 与 docker-compose.testing.yml 的区别：那个只放本机开发用的中间件（明文密码、端口暴露）；
 # 这个是完整部署，密码由 compose-config 从 Nacos 的独立 properties Data ID 注入。
 #
-# 流量走向：浏览器 → edge / admin / tracing-ui；两个 API 都不发布宿主机端口。
+# 流量走向：浏览器 → edge / admin / tracing-ui；三个 API 都不发布宿主机端口。
 # 三个 nginx 入口都覆盖写 X-Forwarded-For；accounts 可据此执行来源 IP 限流。
+# 浏览器永远不持有 Agent 服务 token：public 由 Next Route Handler、admin 由 nginx 在服务端注入。
 #
 # 注意：不要让浏览器直接访问 web（Next.js）——它的 rewrite 代理不会追加 X-Forwarded-For，客户端发来的
 # 头会原样透传，开着 trust_forwarded_for 就能被伪造来绕过限流。所以 web 不发布端口，只能经 edge 访问。
@@ -64,6 +65,21 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
     restart: unless-stopped
 
+  agent-postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: agent
+      POSTGRES_PASSWORD: ${AGENT_DB_PASSWORD:?请在 Nacos Compose 配置中设置 AGENT_DB_PASSWORD}
+      POSTGRES_DB: agent
+    volumes:
+      - agent-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agent -d agent"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
   accounts:
     build:
       context: .
@@ -100,6 +116,47 @@ services:
       start_period: 15s
     restart: unless-stopped
 
+  agent-service:
+    build:
+      context: .
+      dockerfile: services/agent/Dockerfile
+    environment:
+      DATABASE_URL: postgres://agent:${AGENT_DB_PASSWORD}@agent-postgres:5432/agent
+      # 用户/管理员身份只经 accounts 的公开 HTTP 边界校验。
+      APP_AGENT__IDENTITY__USER_AUTH_URL: http://accounts:8080/auth/me
+      APP_AGENT__IDENTITY__ADMIN_AUTH_URL: http://accounts:8080/admin/auth/me
+      # 事件先进 Agent 本地 outbox，再由 worker 投递到 tracing；tracing 故障不影响 Run 完成。
+      APP_AGENT__TRACING__INGEST_URL: http://agent-tracing:8090/api/v1/ingest
+      AGENT_TRACING_PRODUCER_TOKEN: ${AGENT_TRACING_PRODUCER_TOKEN:?请在 Nacos Compose 配置中设置 AGENT_TRACING_PRODUCER_TOKEN}
+      # 每个调用服务独立凭据；浏览器永远拿不到这些 token。
+      AGENT_SERVICE_TOKENS_JSON: '[{"service_id":"web","token":"${AGENT_WEB_SERVICE_TOKEN:?请在 Nacos Compose 配置中设置 AGENT_WEB_SERVICE_TOKEN}"},{"service_id":"admin","token":"${AGENT_ADMIN_SERVICE_TOKEN:?请在 Nacos Compose 配置中设置 AGENT_ADMIN_SERVICE_TOKEN}"}]'
+      APP_AGENT__PLATFORM_ADMIN_IDS: "${AGENT_PLATFORM_ADMIN_IDS:-[1]}"
+      APP_AGENT__LOGGING__FORMAT: ${LOG_FORMAT:-json}
+    volumes:
+      - agent-blob-data:/app/data/blobs
+    depends_on:
+      agent-postgres:
+        condition: service_healthy
+      accounts:
+        condition: service_healthy
+      agent-tracing:
+        condition: service_healthy
+    healthcheck:
+      # 镜像里没有 curl：用 bash 内置的 /dev/tcp 请求 /ready（同时检查 Agent 数据库）。
+      test:
+        - CMD
+        - bash
+        - -c
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/8091 &&
+          printf 'GET /ready HTTP/1.0\r\n\r\n' >&3 &&
+          head -n 1 <&3 | grep -q ' 200 '
+      interval: 5s
+      timeout: 4s
+      retries: 6
+      start_period: 15s
+    restart: unless-stopped
+
   web:
     build:
       context: .
@@ -107,10 +164,30 @@ services:
       args:
         # Next 的 rewrites 在构建时固化：改这个值要重新构建镜像。
         BACKEND_URL: http://accounts:8080
+    environment:
+      # 浏览器只访问同源 /api/agent/*；Next Route Handler 在服务端注入服务 token。
+      AGENT_SERVICE_URL: http://agent-service:8091
+      AGENT_SERVICE_TOKEN: ${AGENT_WEB_SERVICE_TOKEN}
     expose:
       - "3000"
+    healthcheck:
+      # stack-up --wait 必须等 Next.js 页面可用，避免 edge 在启动期间返回 502。
+      test:
+        - CMD
+        - node
+        - -e
+        - >-
+          fetch('http://127.0.0.1:3000/login')
+          .then((response) => process.exit(response.ok ? 0 : 1))
+          .catch(() => process.exit(1))
+      interval: 5s
+      timeout: 4s
+      retries: 12
+      start_period: 15s
     depends_on:
       accounts:
+        condition: service_healthy
+      agent-service:
         condition: service_healthy
     restart: unless-stopped
 
@@ -134,11 +211,16 @@ services:
       context: frontends/admin
     environment:
       BACKEND_UPSTREAM: accounts:8080
+      # /agent-api/* 由 nginx 在服务端注入 admin 专属 token，浏览器不可见。
+      AGENT_UPSTREAM: agent-service:8091
+      AGENT_SERVICE_TOKEN: ${AGENT_ADMIN_SERVICE_TOKEN}
       TRUSTED_PROXY_CIDR: ${TRUSTED_PROXY_CIDR:-127.0.0.1}
     ports:
       - "${ADMIN_PORT:-8081}:80"
     depends_on:
       accounts:
+        condition: service_healthy
+      agent-service:
         condition: service_healthy
     restart: unless-stopped
 
@@ -188,4 +270,6 @@ services:
 volumes:
   postgres-data:
   agent-tracing-postgres-data:
+  agent-postgres-data:
+  agent-blob-data:
   redis-data:

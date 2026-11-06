@@ -1,6 +1,6 @@
 # 部署
 
-这份指南覆盖 accounts 与 Agent tracing 两个后端、三个独立前端入口的 Docker Compose 部署、生产要求和 HTTPS 代理。部署配置存于 Nacos；本机 `.env.local` 只提供 Nacos 地址和认证凭据。namespace、group、应用 TOML Data ID 与 Compose Properties Data ID 固定在项目 `config.toml` 的 `[nacos]` 区域。配置项见 [`configuration.md`](configuration.md)，账号边界见 [`accounts-integration.md`](accounts-integration.md)，数据库备份见 [`backup.md`](backup.md)。
+这份指南覆盖 accounts、Agent 服务与 Agent tracing 三个后端、三个独立前端入口的 Docker Compose 部署、生产要求和 HTTPS 代理。部署配置存于 Nacos；本机 `.env.local` 只提供 Nacos 地址和认证凭据。namespace、group、应用 TOML Data ID 与 Compose Properties Data ID 固定在项目 `config.toml` 的 `[nacos]` 区域。配置项见 [`configuration.md`](configuration.md)，Agent 服务边界见 [`agent-service.md`](agent-service.md)，账号边界见 [`accounts-integration.md`](accounts-integration.md)，数据库备份见 [`backup.md`](backup.md)。
 
 ## 1. 本机或单机部署
 
@@ -18,7 +18,7 @@ NACOS_PASSWORD=
 just stack-up
 ```
 
-首次构建 accounts、agent-tracing 与三个独立前端镜像，并启动两套独立 PostgreSQL，通常需要几分钟。Nacos 中没有设置管理员引导凭据时，不会自动创建管理员；producer 清单为空数组时，管理 UI 可用，但没有 Agent 可以写入事件。
+首次构建 accounts、Agent 服务、agent-tracing 与三个独立前端镜像，并启动三套独立 PostgreSQL，通常需要几分钟。Nacos 中没有设置管理员引导凭据时，不会自动创建管理员；producer 清单为空数组时，管理 UI 可用，但没有 Agent 可以写入事件。Agent 的调用服务 token、producer token 与数据库密码为必填，缺失时入口会拒绝启动。
 
 ### 从旧版 Compose 升级
 
@@ -26,13 +26,13 @@ just stack-up
 
 | 入口 | 地址 | 说明 |
 |---|---|---|
-| 前台站点 | `http://localhost:3000` | 经 `edge`（nginx）进入；`/api/*` 转给账号服务 |
-| 管理后台 | `http://localhost:8081` | 自带 nginx；使用 Nacos 中配置的引导管理员登录 |
+| 前台站点 | `http://localhost:3000` | 经 `edge`（nginx）进入；`/api/auth/*` 转给账号服务，`/api/agent/*` 转给 Next Route Handler 并由其注入 Agent 服务凭据 |
+| 管理后台 | `http://localhost:8081` | 自带 nginx；使用 Nacos 中配置的引导管理员登录；`/agent-api/*` 由 nginx 注入 Agent 服务凭据并代理 |
 | Tracing Studio | `http://localhost:8082` | 独立 Vite/React 服务；同源代理管理员认证、轨迹查询和 producer 写入 |
 | Producer ingest API | `http://localhost:8082/api/v1/ingest/runs/{run_id}/events` | tracing UI nginx 保留 `/api/v1/ingest/*` 原路径并代理到 agent-tracing |
-| accounts API / tracing API | 不直接发布宿主机端口 | 经各自前端 nginx 或受控内部网络访问 |
+| accounts API / Agent API / tracing API | 不直接发布宿主机端口 | 经各自前端 nginx 或受控内部网络访问 |
 
-常用命令：`just stack-logs [服务名]`、`just tracing-up` / `just tracing-down`、`just stack-down`（保留数据）、`just stack-reset`（**删除两套数据库与 Redis 数据卷**）。这些命令同样需要先从 Nacos 读取配置。
+常用命令：`just stack-logs [服务名]`、`just tracing-up` / `just tracing-down`、`just agent-up` / `just agent-down`、`just stack-down`（保留数据）、`just stack-reset`（**删除三套数据库、Agent Blob 与 Redis 数据卷**）。这些命令同样需要先从 Nacos 读取配置。
 
 宿主机端口和 Compose 项目可对单条命令临时覆盖，不会写回 Nacos：
 
@@ -53,18 +53,20 @@ COMPOSE_PROJECT_NAME=accounts-dev COMPOSE_ACCOUNTS_PORT=28082 just accounts-up
 ### 服务关系
 
 ```text
-浏览器 → edge(nginx) ─ /api/ ──────────────→ accounts:8080 → accounts postgres, redis
+浏览器 → edge(nginx) ─ /api/auth/* ─────────→ accounts:8080 → accounts postgres, redis
+              ├─ /api/agent/* ─→ web(Next Route Handler) ─→ agent-service:8091
               └─ /  → web(Next.js)
 浏览器 → admin(nginx) ─ /api/ ─────────────→ accounts:8080
+                    └─ /agent-api/* ──────→ agent-service:8091 → agent postgres, blob volume
 浏览器 → tracing-ui(nginx) ─ /api/admin/auth/* → accounts:8080
                        ├─ /api/v1/ingest/* ────→ agent-tracing:8090 → tracing postgres
                        ├─ /api/admin/agent-traces/* → agent-tracing:8090
                        └─ / → Trace Studio
-Agent producer ──────────────────────────────────→ tracing-ui/api/v1/ingest/*
+Agent 服务 ── outbox ──────────────────────────→ tracing-ui/api/v1/ingest/*（或 agent-tracing 内部地址）
 ```
 
-- `accounts` 的 `/ready` 检查自己的 PostgreSQL 与 Redis；`agent-tracing` 的 `/ready` 检查 tracing 专属 PostgreSQL。任一数据库不可用约 30 秒后相应服务变为 `unhealthy`。
-- 两个后端启动时分别只执行自己数据库中的迁移；`agent-tracing` 不连接或迁移 accounts 数据库。
+- `accounts` 的 `/ready` 检查自己的 PostgreSQL 与 Redis；`agent-service` 的 `/ready` 检查 Agent 专属 PostgreSQL；`agent-tracing` 的 `/ready` 检查 tracing 专属 PostgreSQL。任一数据库不可用约 30 秒后相应服务变为 `unhealthy`。tracing 故障不会让 Agent 的 `/ready` 失败，outbox 会在恢复后继续投递。
+- 三个后端启动时分别只执行自己数据库中的迁移；互不连接或迁移对方数据库。
 - Redis 使用 AOF 持久化；重启后用户会话通常仍然有效。
 
 ## 2. 为什么前台前面必须有 nginx
@@ -84,13 +86,28 @@ Agent producer ─────────────────────�
 |---|---|
 | `POSTGRES_PASSWORD`、`REDIS_PASSWORD` | accounts 使用的强随机值；迁移现有部署时保留原值，不要提交到 Git 或本机配置文件 |
 | `AGENT_TRACING_DB_PASSWORD` | tracing 专属数据库的独立 URL-safe 强随机值；不要与 accounts 密码复用 |
+| `AGENT_DB_PASSWORD` | Agent 专属数据库的独立 URL-safe 强随机值；不要与 accounts/tracing 复用 |
+| `AGENT_WEB_SERVICE_TOKEN`、`AGENT_ADMIN_SERVICE_TOKEN` | 每个调用入口一条独立凭据，至少 32 字符；只注入 Next Route Handler 与 admin nginx，浏览器不可见 |
+| `AGENT_TRACING_PRODUCER_TOKEN` | 与 `AGENT_TRACING_PRODUCERS_JSON` 中对应条目一致；只注入 agent-service |
 | `AGENT_TRACING_PRODUCERS_JSON` | 每个 producer 绑定固定 `source_id` / `project_id` 的 Bearer Token；至少 32 字符，放在受控 Nacos 配置或密钥管理中 |
+| `AGENT_PLATFORM_ADMIN_IDS` | 平台管理员 accounts ID；只允许创建组织/授权组织管理员，不自动获得组织 scope |
 | `ADMIN_BOOTSTRAP_PASSWORD` | 如需引导管理员，使用强随机值；账号只在**不存在**时创建，事后改配置不会改已有密码 |
 | `COOKIE_SECURE=true` | HTTPS 部署必须开启；否则会话 Cookie 可能经明文传输 |
 | `TRUSTED_PROXY_CIDR` | 配置 HTTPS 终止代理的 IP/CIDR；默认只认直接连接对端 |
-| 备份 | 配置定时备份并演练恢复，见 [`backup.md`](backup.md) |
+| 备份 | 配置定时备份并演练恢复，见 [`backup.md`](backup.md)；三套数据库与 Agent Blob 卷都要覆盖 |
 
-数据库、Redis 和管理员密码只由 compose-config 进程注入容器。不要通过 `docker inspect`、调试输出或日志导出这些环境字段。
+数据库、Redis、Agent 服务 token 和管理员密码只由 compose-config 进程注入容器。不要通过 `docker inspect`、调试输出或日志导出这些环境字段。
+
+### 回滚
+
+Agent 服务迁移只向前，不提供 down migration。回滚步骤：
+
+1. 从 `edge`/admin 下线 `/api/agent/*`、`/agent-api/*`（或停止 `agent-service`），避免旧代码读取新 schema。
+2. 重新部署上一个镜像 tag；保留 `agent-postgres-data` 与 `agent-blob-data` 卷。
+3. 若新版本已包含不兼容 schema 变更，按 [`backup.md`](backup.md) 恢复同轮数据库快照后再启动旧镜像。
+4. 恢复入口并检查 `/ready`、创建一次 Session/Run、确认 admin 与 tracing 可见对应状态。
+
+不要用 `just stack-reset` 排错，它会删除三套数据库与 Blob 卷。Agent 回滚不影响 accounts 与 tracing 各自的数据；tracing outbox 在停止期间保留待投递事件，恢复后继续。
 
 ## 4. 前面增加 HTTPS 代理
 
@@ -109,19 +126,24 @@ nginx 会从受信任的代理请求里还原客户端地址，再覆盖写 `X-F
 | 镜像 | 构建 | 运行时配置 |
 |---|---|---|
 | 账号服务 | `just docker-build` | `DATABASE_URL`、`REDIS_URL` 等；监听 8080，以非 root 运行 |
-| 前台 | `just web-docker-build <账号服务地址>` | 构建参数 `BACKEND_URL` 指向账号服务；修改后需重新构建 |
-| 管理后台 | `just web-admin-docker-build` | `BACKEND_UPSTREAM`（默认 `accounts:8080`）、`TRUSTED_PROXY_CIDR` |
+| Agent 服务 | `just agent-docker-build` | 独立 `DATABASE_URL`、`AGENT_SERVICE_TOKENS_JSON`、`AGENT_TRACING_PRODUCER_TOKEN`、`APP_AGENT__IDENTITY__*`；监听 8091，以非 root 运行 |
+| 前台 | `just web-docker-build <账号服务地址>` | 构建参数 `BACKEND_URL` 指向账号服务（改地址需重新构建）；运行时 `AGENT_SERVICE_URL`、`AGENT_SERVICE_TOKEN` |
+| 管理后台 | `just web-admin-docker-build` | `BACKEND_UPSTREAM`（默认 `accounts:8080`）、`AGENT_UPSTREAM`（默认 `agent-service:8091`）、`AGENT_SERVICE_TOKEN`、`TRUSTED_PROXY_CIDR` |
 | Agent tracing 后端 | `just tracing-docker-build` | tracing 独立 `APP_DATABASE__URL`、`APP_ACCOUNTS__ADMIN_AUTH_URL`、`APP_PRODUCER__CREDENTIALS_JSON`；监听 8090，以非 root 运行 |
 | Tracing Studio | `just web-tracing-docker-build` | `ACCOUNTS_UPSTREAM`、`TRACING_UPSTREAM`、`TRUSTED_PROXY_CIDR`；同时代理 producer 写入口 |
 
-单独运行镜像时由部署平台提供运行时变量。Nacos Compose 读取器只管理本仓库 Compose 配置，不是账号服务镜像的一部分。容器镜像不带 `curl`；编排平台的探针直接请求 `/live`、`/ready`。
+单独运行镜像时由部署平台提供运行时变量。三个 Rust 后端镜像都包含系统 CA 信任库，供 Nacos、Agent Runtime 和 accounts 等 HTTPS 上游校验证书。完整 Compose 会通过 `/login` 检查 public Next.js 服务就绪；`stack-up --wait` 最多等待 120 秒。Nacos Compose 读取器只管理本仓库 Compose 配置，不是账号服务镜像的一部分。容器镜像不带 `curl`；编排平台的探针直接请求 `/live`、`/ready`。
 
 ## 6. 排错
 
 - `compose-config` 报 Nacos 配置加载失败：检查 `.env.local` 中 Nacos server/认证参数、网络访问，以及 `config.toml` `[nacos]` 的 namespace/group/Data ID 与读取权限。不会回退读取 `.env` 或 `.env.compose`。
 - 配置格式错误：检查是否有未知/重复键、缺少数据库或 Redis 密码、无效端口、无效 `COOKIE_SECURE`/`LOG_FORMAT` 或无效代理地址段。
 - `accounts` 一直 `unhealthy`：`just stack-logs accounts`；常见原因是 Nacos 密码与数据卷里已有的数据库密码不一致。生产不要用 `just stack-reset` 排错，因为它会清空数据；应通过受控数据库操作同步密码。
+- `agent-service` 一直 `unhealthy`：`just stack-logs agent-service agent-postgres`；检查 `AGENT_DB_PASSWORD` 与 Agent 专属数据库，不要改用 accounts/tracing 数据库。
+- public 的 Agent 调用返回 `503 agent_unavailable`：检查 `web` 的 `AGENT_SERVICE_URL`/`AGENT_SERVICE_TOKEN` 与 Route Handler 日志；admin 返回同样错误时检查 `AGENT_UPSTREAM`、`AGENT_SERVICE_TOKEN` 和 nginx。
+- Agent 返回 `401 service_unauthorized`：调用方 token 是否在 `AGENT_SERVICE_TOKENS_JSON` 中且一致；不要用 accounts 的管理员 Cookie 代替服务凭据。
 - `agent-tracing` 一直 `unhealthy`：`just stack-logs agent-tracing tracing-postgres`；检查 tracing 专属密码和 `AGENT_TRACING_DB_PASSWORD`，不要改用 accounts 数据库。
+- Agent Run 完成但 tracing 缺事件：检查 outbox 日志、`AGENT_TRACING_PRODUCER_TOKEN` 与 `AGENT_TRACING_PRODUCERS_JSON`；tracing 恢复后 outbox 会补投，不会阻塞 Run。
 - producer 收到 `401 producer_unauthorized`：核对 `AGENT_TRACING_PRODUCERS_JSON` 中的 source/project/token；未出现在当前配置的 source 会被禁用。
 - producer 收到 `409 sequence_gap`：按 `expected_seq` 从 producer 持久队列重发连续事件；同一序号不同内容不能覆盖已提交事件。
 - 前台能打开但登录 502：`edge` 解析不到 accounts。accounts 只在 Compose 网络内可见。

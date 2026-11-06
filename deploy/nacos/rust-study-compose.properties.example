@@ -9,8 +9,24 @@ REDIS_PASSWORD=
 # tracing 独立 PostgreSQL 密码（必填；URL-safe 随机字符；不要与 accounts 数据库复用）。
 AGENT_TRACING_DB_PASSWORD=
 
+# Agent 服务独立 PostgreSQL 密码（必填；URL-safe 随机字符；不要与 accounts / tracing 复用）。
+AGENT_DB_PASSWORD=
+
 # 可登记多个 producer；token 使用至少 32 字符的随机值。没有接入 producer 时留空数组。
+# Agent 服务投递事件时，这里必须包含一个与 AGENT_TRACING_PRODUCER_TOKEN 相同的 token 条目。
 AGENT_TRACING_PRODUCERS_JSON=[]
+
+# Agent 服务调用凭据（必填，每个调用服务一条，token 至少 32 字符）。
+# AGENT_WEB_SERVICE_TOKEN 注入 public 前端的 Next Route Handler；
+# AGENT_ADMIN_SERVICE_TOKEN 注入管理后台 nginx。浏览器都拿不到明文。
+AGENT_WEB_SERVICE_TOKEN=
+AGENT_ADMIN_SERVICE_TOKEN=
+
+# Agent 服务向 agent-tracing 投递事件的 producer token（必填，必须与上面的 producer 清单一致）。
+AGENT_TRACING_PRODUCER_TOKEN=
+
+# 平台管理员的 accounts ID 列表；只允许创建组织/授权组织管理员，不自动获得组织 scope。
+AGENT_PLATFORM_ADMIN_IDS=[1]
 
 # 引导管理员（不填则没有任何管理员能登录后台）。已存在则不改动，所以事后改这里不会改密码。
 ADMIN_BOOTSTRAP_USERNAME=admin

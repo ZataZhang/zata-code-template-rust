@@ -121,7 +121,10 @@ forbidden_path_patterns = [
     "docker-compose.prod.yml",
 ]
 # 匹配后可覆盖 forbidden_path_patterns 的路径通配例外；应保持范围狭窄
-forbidden_path_exceptions = []
+forbidden_path_exceptions = [
+    ".env.example",
+    ".env.*.example",
+]
 
 # Autopilot 快速档（合并队列）：supervisor 之后串行合并；需配合 safety.auto_merge = true 同时启用
 [agent_runner.autopilot]

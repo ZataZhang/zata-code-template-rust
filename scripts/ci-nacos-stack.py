@@ -25,6 +25,14 @@ ROOT = Path(__file__).resolve().parents[1]
 NACOS_IMAGE = "nacos/nacos-server:v3.2.4"
 NACOS_TIMEOUT_SECONDS = 240
 SPECIAL_ADMIN_PASSWORD = 'literal = ${SHOULD_NOT_EXPAND} "quoted" with spaces'
+COMPOSE_BUILD_SERVICE_NAMES = (
+    "accounts",
+    "web",
+    "admin",
+    "agent-service",
+    "agent-tracing",
+    "tracing-ui",
+)
 
 
 @dataclass(frozen=True)
@@ -52,6 +60,10 @@ class CiFixture:
 class TestSecrets:
     postgres_password: str
     agent_tracing_password: str
+    agent_db_password: str
+    agent_web_token: str
+    agent_admin_token: str
+    agent_producer_token: str
     redis_password: str
     admin_password: str
     nacos_token: str
@@ -98,7 +110,7 @@ def run_checked(
         failure_output = ""
         if options.include_failure_output:
             failure_output = "\n".join(
-                (completed.stdout + completed.stderr).splitlines()[-35:]
+                (completed.stdout + completed.stderr).replace("\r", "\n").splitlines()[-100:]
             )
             for secret_value in options.redacted_values:
                 if secret_value:
@@ -108,6 +120,82 @@ def run_checked(
             f"命令失败（退出码 {completed.returncode}）：{Path(arguments[0]).name}{details}"
         )
     return completed.stdout.strip()
+
+
+def capture_diagnostic_output(
+    command_arguments: list[str],
+    environment: dict[str, str],
+    redacted_values: tuple[str, ...],
+) -> tuple[int, str]:
+    """运行诊断命令并返回脱敏后的末尾输出。"""
+    completed = subprocess.run(
+        command_arguments,
+        cwd=ROOT,
+        env=environment,
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    output_tail = "\n".join(
+        (completed.stdout + completed.stderr)
+        .replace("\r", "\n")
+        .splitlines()[-100:]
+    )
+    for secret_value in redacted_values:
+        if secret_value:
+            output_tail = output_tail.replace(secret_value, "<redacted>")
+    return completed.returncode, output_tail
+
+
+def compose_startup_diagnostics(
+    environment: dict[str, str], redacted_values: tuple[str, ...]
+) -> str:
+    """收集 Compose 启动失败前可见的服务状态、日志和 web 探针结果。"""
+    compose_arguments = ["./scripts/compose-config.sh", "compose", "full"]
+    diagnostic_commands = [
+        ("Compose 服务状态", [*compose_arguments, "ps", "--all"]),
+        (
+            "web 启动日志",
+            [*compose_arguments, "logs", "--no-color", "--tail=100", "web"],
+        ),
+        (
+            "agent-tracing 启动日志",
+            [
+                *compose_arguments,
+                "logs",
+                "--no-color",
+                "--tail=100",
+                "agent-tracing",
+            ],
+        ),
+    ]
+    diagnostic_sections: list[str] = []
+    for section_title, command_arguments in diagnostic_commands:
+        _, section_output = capture_diagnostic_output(
+            command_arguments, environment, redacted_values
+        )
+        diagnostic_sections.append(f"{section_title}:\n{section_output}")
+
+    container_id_command = [*compose_arguments, "ps", "--quiet", "web"]
+    container_id_status, container_id_output = capture_diagnostic_output(
+        container_id_command, environment, redacted_values
+    )
+    web_container_id = container_id_output.splitlines()
+    if container_id_status == 0 and web_container_id:
+        healthcheck_arguments = [
+            "docker",
+            "inspect",
+            "--format",
+            "{{json .State.Health}}",
+            web_container_id[0],
+        ]
+        _, healthcheck_output = capture_diagnostic_output(
+            healthcheck_arguments, environment, redacted_values
+        )
+        diagnostic_sections.append(f"web 健康检查结果:\n{healthcheck_output}")
+
+    return "\n".join(diagnostic_sections)
 
 
 def nacos_url(location: NacosLocation, endpoint: str) -> str:
@@ -215,12 +303,27 @@ def write_locator(file_path: Path, location: NacosLocation) -> None:
 
 
 def properties_content(secrets_bundle: TestSecrets) -> str:
+    producer_credentials = json.dumps(
+        [
+            {
+                "source_id": "agent",
+                "project_id": "agent",
+                "token": secrets_bundle.agent_producer_token,
+            }
+        ],
+        separators=(",", ":"),
+    )
     return "\n".join(
         (
             "# isolated CI values",
             f"POSTGRES_PASSWORD={secrets_bundle.postgres_password}",
             f"AGENT_TRACING_DB_PASSWORD={secrets_bundle.agent_tracing_password}",
-            "AGENT_TRACING_PRODUCERS_JSON=[]",
+            f"AGENT_DB_PASSWORD={secrets_bundle.agent_db_password}",
+            f"AGENT_WEB_SERVICE_TOKEN={secrets_bundle.agent_web_token}",
+            f"AGENT_ADMIN_SERVICE_TOKEN={secrets_bundle.agent_admin_token}",
+            f"AGENT_TRACING_PRODUCER_TOKEN={secrets_bundle.agent_producer_token}",
+            f"AGENT_TRACING_PRODUCERS_JSON={producer_credentials}",
+            "AGENT_PLATFORM_ADMIN_IDS=[1]",
             f"REDIS_PASSWORD={secrets_bundle.redis_password}",
             "ADMIN_BOOTSTRAP_USERNAME=ci-admin",
             f"ADMIN_BOOTSTRAP_PASSWORD={secrets_bundle.admin_password}",
@@ -322,6 +425,18 @@ def verify_container_configuration(fixture: CiFixture, secrets_bundle: TestSecre
     accounts_environment = env_map(
         find_service_container(fixture.project_name, "accounts")
     )
+    agent_environment = env_map(
+        find_service_container(fixture.project_name, "agent-service")
+    )
+    web_environment = env_map(find_service_container(fixture.project_name, "web"))
+    admin_environment = env_map(find_service_container(fixture.project_name, "admin"))
+    expected_agent_tokens = json.dumps(
+        [
+            {"service_id": "web", "token": secrets_bundle.agent_web_token},
+            {"service_id": "admin", "token": secrets_bundle.agent_admin_token},
+        ],
+        separators=(",", ":"),
+    )
 
     matches = (
         postgres_environment.get("POSTGRES_PASSWORD")
@@ -335,19 +450,33 @@ def verify_container_configuration(fixture: CiFixture, secrets_bundle: TestSecre
         == f"postgres://app:{secrets_bundle.postgres_password}@postgres:5432/app"
         and accounts_environment.get("REDIS_URL")
         == f"redis://:{secrets_bundle.redis_password}@redis:6379/0"
+        and agent_environment.get("DATABASE_URL")
+        == f"postgres://agent:{secrets_bundle.agent_db_password}@agent-postgres:5432/agent"
+        and agent_environment.get("AGENT_SERVICE_TOKENS_JSON")
+        == expected_agent_tokens
+        and agent_environment.get("AGENT_TRACING_PRODUCER_TOKEN")
+        == secrets_bundle.agent_producer_token
+        and agent_environment.get("APP_AGENT__PLATFORM_ADMIN_IDS") == "[1]"
+        and web_environment.get("AGENT_SERVICE_TOKEN")
+        == secrets_bundle.agent_web_token
+        and admin_environment.get("AGENT_SERVICE_TOKEN")
+        == secrets_bundle.agent_admin_token
         and not any(
             key.startswith("NACOS_")
             for service_environment in (
                 postgres_environment,
                 redis_environment,
                 accounts_environment,
+                agent_environment,
+                web_environment,
+                admin_environment,
             )
             for key in service_environment
         )
     )
     if not matches:
         raise RuntimeError("容器环境与 Nacos 值不一致或 Nacos 引导参数泄漏")
-    print("PASS  Nacos 值原样到达 PostgreSQL、Redis 与 accounts 容器；NACOS_* 未传入容器")
+    print("PASS  Nacos 值原样到达 PostgreSQL、Redis、accounts、Agent 与前端容器；NACOS_* 未传入容器")
 
 
 def http_status(url: str) -> int:
@@ -443,6 +572,10 @@ def cleanup(
     cleanup_environment = environment.copy()
     cleanup_environment["POSTGRES_PASSWORD"] = secrets_bundle.postgres_password
     cleanup_environment["AGENT_TRACING_DB_PASSWORD"] = secrets_bundle.agent_tracing_password
+    cleanup_environment["AGENT_DB_PASSWORD"] = secrets_bundle.agent_db_password
+    cleanup_environment["AGENT_WEB_SERVICE_TOKEN"] = secrets_bundle.agent_web_token
+    cleanup_environment["AGENT_ADMIN_SERVICE_TOKEN"] = secrets_bundle.agent_admin_token
+    cleanup_environment["AGENT_TRACING_PRODUCER_TOKEN"] = secrets_bundle.agent_producer_token
     cleanup_environment["REDIS_PASSWORD"] = secrets_bundle.redis_password
     subprocess.run(
         [
@@ -501,6 +634,10 @@ def main() -> int:
     secrets_bundle = TestSecrets(
         postgres_password=f"pg-{secrets.token_hex(16)}",
         agent_tracing_password=f"trace-{secrets.token_hex(16)}",
+        agent_db_password=f"agent-{secrets.token_hex(16)}",
+        agent_web_token=f"web-{secrets.token_hex(16)}",
+        agent_admin_token=f"admin-{secrets.token_hex(16)}",
+        agent_producer_token=f"producer-{secrets.token_hex(16)}",
         redis_password=f"redis-{secrets.token_hex(16)}",
         admin_password=SPECIAL_ADMIN_PASSWORD,
         nacos_token=base64.b64encode(secrets.token_bytes(32)).decode("ascii"),
@@ -665,16 +802,47 @@ def main() -> int:
             redacted_values = (
                 secrets_bundle.postgres_password,
                 secrets_bundle.agent_tracing_password,
+                secrets_bundle.agent_db_password,
+                secrets_bundle.agent_web_token,
+                secrets_bundle.agent_admin_token,
+                secrets_bundle.agent_producer_token,
                 secrets_bundle.redis_password,
                 secrets_bundle.admin_password,
                 secrets_bundle.nacos_token,
                 secrets_bundle.nacos_identity,
             )
-            run_checked(
-                ["just", "stack-up"],
-                environment=environment,
-                options=RunOptions(redacted_values=redacted_values),
-            )
+            print("== 顺序预构建 Compose 镜像，避免并行 Rust 构建耗尽 CI runner")
+            for service_name in COMPOSE_BUILD_SERVICE_NAMES:
+                print(f"== 构建 {service_name} 镜像")
+                run_checked(
+                    [
+                        "./scripts/compose-config.sh",
+                        "compose",
+                        "full",
+                        "build",
+                        service_name,
+                    ],
+                    environment=environment,
+                    options=RunOptions(
+                        redacted_values=redacted_values,
+                        include_failure_output=True,
+                    ),
+                )
+            try:
+                run_checked(
+                    ["just", "stack-up"],
+                    environment=environment,
+                    options=RunOptions(
+                        redacted_values=redacted_values,
+                        include_failure_output=True,
+                    ),
+                )
+            except RuntimeError as stack_up_error:
+                raise RuntimeError(
+                    f"{stack_up_error}\n"
+                    f"Compose startup diagnostics:\n"
+                    f"{compose_startup_diagnostics(environment, redacted_values)}"
+                ) from stack_up_error
             verify_container_configuration(fixture, secrets_bundle)
             run_checked(
                 ["just", "stack-smoke"],
