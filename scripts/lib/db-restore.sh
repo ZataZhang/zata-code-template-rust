@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# 从指定备份恢复 accounts 或 Agent tracing PostgreSQL。**会覆盖对应数据库的内容。**
+# 从指定备份恢复 accounts、Agent 服务或 Agent tracing PostgreSQL。**会覆盖对应数据库的内容。**
 #
 # 用法：just db-restore backups/app-20261016-120000Z.dump
+#       just db-restore backups/agent-20261016-120000Z.dump
 #       just db-restore backups/agent-tracing-20261016-120000Z.dump
 #
 # 恢复前停止对应写服务，避免在恢复期间继续追加数据；完成后重启服务并自动执行迁移。
@@ -30,8 +31,14 @@ case "$(basename "$FILE")" in
     database_name="agent_tracing"
     application_service="agent-tracing"
     ;;
+  agent-*.dump)
+    database_container="agent-postgres"
+    database_user="agent"
+    database_name="agent"
+    application_service="agent-service"
+    ;;
   *)
-    echo "备份文件名必须以 app- 或 agent-tracing- 开头" >&2
+    echo "备份文件名必须以 app-、agent- 或 agent-tracing- 开头" >&2
     exit 2
     ;;
 esac

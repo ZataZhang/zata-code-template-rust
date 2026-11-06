@@ -17,7 +17,10 @@ import { Route as errors404RouteImport } from './routes/(errors)/404'
 import { Route as errors500RouteImport } from './routes/(errors)/500'
 import { Route as errors503RouteImport } from './routes/(errors)/503'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
+import { Route as AuthenticatedAgentRuntimesIndexRouteImport } from './routes/_authenticated/agent-runtimes/index'
+import { Route as AuthenticatedAgentsIndexRouteImport } from './routes/_authenticated/agents/index'
 import { Route as AuthenticatedErrorsErrorRouteImport } from './routes/_authenticated/errors/$error'
+import { Route as AuthenticatedOrganizationsIndexRouteImport } from './routes/_authenticated/organizations/index'
 import { Route as AuthenticatedUsersIndexRouteImport } from './routes/_authenticated/users/index'
 
 const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
@@ -59,10 +62,28 @@ const AuthenticatedIndexRoute = AuthenticatedIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedAgentRuntimesIndexRoute =
+  AuthenticatedAgentRuntimesIndexRouteImport.update({
+    id: '/agent-runtimes/',
+    path: '/agent-runtimes/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedAgentsIndexRoute =
+  AuthenticatedAgentsIndexRouteImport.update({
+    id: '/agents/',
+    path: '/agents/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedErrorsErrorRoute =
   AuthenticatedErrorsErrorRouteImport.update({
     id: '/errors/$error',
     path: '/errors/$error',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedOrganizationsIndexRoute =
+  AuthenticatedOrganizationsIndexRouteImport.update({
+    id: '/organizations/',
+    path: '/organizations/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedUsersIndexRoute = AuthenticatedUsersIndexRouteImport.update({
@@ -80,6 +101,9 @@ export interface FileRoutesByFullPath {
   '/500': typeof errors500Route
   '/503': typeof errors503Route
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
+  '/agent-runtimes/': typeof AuthenticatedAgentRuntimesIndexRoute
+  '/agents/': typeof AuthenticatedAgentsIndexRoute
+  '/organizations/': typeof AuthenticatedOrganizationsIndexRoute
   '/users/': typeof AuthenticatedUsersIndexRoute
 }
 export interface FileRoutesByTo {
@@ -91,6 +115,9 @@ export interface FileRoutesByTo {
   '/503': typeof errors503Route
   '/': typeof AuthenticatedIndexRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
+  '/agent-runtimes': typeof AuthenticatedAgentRuntimesIndexRoute
+  '/agents': typeof AuthenticatedAgentsIndexRoute
+  '/organizations': typeof AuthenticatedOrganizationsIndexRoute
   '/users': typeof AuthenticatedUsersIndexRoute
 }
 export interface FileRoutesById {
@@ -104,6 +131,9 @@ export interface FileRoutesById {
   '/(errors)/503': typeof errors503Route
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/_authenticated/errors/$error': typeof AuthenticatedErrorsErrorRoute
+  '/_authenticated/agent-runtimes/': typeof AuthenticatedAgentRuntimesIndexRoute
+  '/_authenticated/agents/': typeof AuthenticatedAgentsIndexRoute
+  '/_authenticated/organizations/': typeof AuthenticatedOrganizationsIndexRoute
   '/_authenticated/users/': typeof AuthenticatedUsersIndexRoute
 }
 export interface FileRouteTypes {
@@ -117,6 +147,9 @@ export interface FileRouteTypes {
     | '/500'
     | '/503'
     | '/errors/$error'
+    | '/agent-runtimes/'
+    | '/agents/'
+    | '/organizations/'
     | '/users/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -128,6 +161,9 @@ export interface FileRouteTypes {
     | '/503'
     | '/'
     | '/errors/$error'
+    | '/agent-runtimes'
+    | '/agents'
+    | '/organizations'
     | '/users'
   id:
     | '__root__'
@@ -140,6 +176,9 @@ export interface FileRouteTypes {
     | '/(errors)/503'
     | '/_authenticated/'
     | '/_authenticated/errors/$error'
+    | '/_authenticated/agent-runtimes/'
+    | '/_authenticated/agents/'
+    | '/_authenticated/organizations/'
     | '/_authenticated/users/'
   fileRoutesById: FileRoutesById
 }
@@ -211,11 +250,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/agent-runtimes/': {
+      id: '/_authenticated/agent-runtimes/'
+      path: '/agent-runtimes'
+      fullPath: '/agent-runtimes/'
+      preLoaderRoute: typeof AuthenticatedAgentRuntimesIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/agents/': {
+      id: '/_authenticated/agents/'
+      path: '/agents'
+      fullPath: '/agents/'
+      preLoaderRoute: typeof AuthenticatedAgentsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/errors/$error': {
       id: '/_authenticated/errors/$error'
       path: '/errors/$error'
       fullPath: '/errors/$error'
       preLoaderRoute: typeof AuthenticatedErrorsErrorRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/organizations/': {
+      id: '/_authenticated/organizations/'
+      path: '/organizations'
+      fullPath: '/organizations/'
+      preLoaderRoute: typeof AuthenticatedOrganizationsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/users/': {
@@ -231,12 +291,18 @@ declare module '@tanstack/react-router' {
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
   AuthenticatedErrorsErrorRoute: typeof AuthenticatedErrorsErrorRoute
+  AuthenticatedAgentRuntimesIndexRoute: typeof AuthenticatedAgentRuntimesIndexRoute
+  AuthenticatedAgentsIndexRoute: typeof AuthenticatedAgentsIndexRoute
+  AuthenticatedOrganizationsIndexRoute: typeof AuthenticatedOrganizationsIndexRoute
   AuthenticatedUsersIndexRoute: typeof AuthenticatedUsersIndexRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
   AuthenticatedErrorsErrorRoute: AuthenticatedErrorsErrorRoute,
+  AuthenticatedAgentRuntimesIndexRoute: AuthenticatedAgentRuntimesIndexRoute,
+  AuthenticatedAgentsIndexRoute: AuthenticatedAgentsIndexRoute,
+  AuthenticatedOrganizationsIndexRoute: AuthenticatedOrganizationsIndexRoute,
   AuthenticatedUsersIndexRoute: AuthenticatedUsersIndexRoute,
 }
 

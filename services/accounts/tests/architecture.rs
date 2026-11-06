@@ -48,6 +48,19 @@ const ALLOWED_LAYER_DEPENDENCIES: &[(&str, &[&str])] = &[
         ],
     ),
     ("platform-oss", &[]),
+    ("agent-core", &[]),
+    ("agent-api", &["agent-core"]),
+    ("agent-engines", &["agent-core"]),
+    ("agent-infrastructure", &["agent-core"]),
+    (
+        "agent",
+        &[
+            "agent-api",
+            "agent-core",
+            "agent-engines",
+            "agent-infrastructure",
+        ],
+    ),
 ];
 
 /// 某一层实际声明的内部依赖（含 dev / build 依赖）。
@@ -253,6 +266,19 @@ fn checker_rejects_forbidden_and_unregistered_dependencies() {
             ],
         ),
         layer("platform-oss", &[]),
+        layer("agent-core", &[]),
+        layer("agent-api", &["agent-core"]),
+        layer("agent-engines", &["agent-core"]),
+        layer("agent-infrastructure", &["agent-core"]),
+        layer(
+            "agent",
+            &[
+                "agent-api",
+                "agent-core",
+                "agent-engines",
+                "agent-infrastructure",
+            ],
+        ),
         layer("billing-core", &[]), // 未登记的新层
     ];
 

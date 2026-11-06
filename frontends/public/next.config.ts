@@ -21,8 +21,9 @@ const nextConfig: NextConfig = {
   async rewrites() {
     return [
       {
-        source: "/api/:path*",
-        destination: `${backendUrl}/:path*`,
+        // 只转发 accounts 的认证路由；/api/agent/* 由同源 Route Handler 注入服务凭据。
+        source: "/api/auth/:path*",
+        destination: `${backendUrl}/auth/:path*`,
       },
     ]
   },

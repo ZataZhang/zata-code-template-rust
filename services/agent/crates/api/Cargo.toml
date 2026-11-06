@@ -1,0 +1,24 @@
+[package]
+name = "tpl-agent-api"
+description = "Agent 服务 HTTP 接入层：用户、组织管理、目录、Session、Run、资源与产物契约。"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+tpl-agent-core.workspace = true
+
+axum.workspace = true
+axum-extra = { workspace = true, features = ["cookie"] }
+serde.workspace = true
+serde_json.workspace = true
+time = { workspace = true, features = ["serde-well-known", "formatting", "parsing"] }
+tokio.workspace = true
+tokio-stream.workspace = true
+tower-http = { workspace = true, features = ["trace", "timeout"] }
+tracing.workspace = true
+uuid.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,23 @@
+[package]
+name = "tpl-agent-engines"
+description = "Agent 服务执行适配器：内置 Sandbox 平台工具与外部 A2A 1.0 JSON-RPC。"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+tpl-agent-core.workspace = true
+
+async-trait.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+time = { workspace = true, features = ["serde-well-known", "formatting", "parsing"] }
+tokio.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+
+[lints]
+workspace = true

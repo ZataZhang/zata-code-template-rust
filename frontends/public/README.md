@@ -2,7 +2,7 @@
 
 面向终端用户的站点：营销页、注册、登录，以及登录后的受保护区域。基于 Next.js 16（App Router）+ React 19 + Tailwind CSS v4 + shadcn/ui，中英双语（next-intl）。
 
-它是后端之外的**独立 Web 客户端**，只通过 `/api/*` 的 HTTP 调用 `accounts-service`，不依赖后端 Rust crate。
+它是后端之外的**独立 Web 客户端**，只通过 `/api/auth/*` 调用 `accounts-service`、通过 `/api/agent/*` 调用 `agent-service`，不依赖后端 Rust crate。
 
 ## 运行
 
@@ -12,7 +12,7 @@ just accounts-up        # 终端 1：独立启动账号服务，http://localhost
 BACKEND_URL=http://localhost:8082 just web-dev  # 终端 2：启动前端，默认 http://localhost:3000
 ```
 
-本机完整开发流程可直接运行仓库根目录的 `just run`，它会启动 API 和两个站点并打印 URL。`http://localhost:8080` 是 API 根地址，没有网页；健康检查为 `/ready`。若单独使用 Docker 账号服务，则运行 `just accounts-up` 后再按上面的命令将 `BACKEND_URL` 指向 8082。`/api/*` 由 Next.js rewrites 转发到该服务；`BACKEND_URL` 在生产构建时生效，见下文「部署」。账号 UI 包构建产物缺失时，先运行 `just accounts-ui-check`。
+本机完整开发流程可直接运行仓库根目录的 `just run`，它会启动 API 和两个站点并打印 URL。`http://localhost:8080` 是 accounts API 根地址，没有网页；健康检查为 `/ready`。若单独使用 Docker 账号服务，则运行 `just accounts-up` 后再按上面的命令将 `BACKEND_URL` 指向 8082。`/api/auth/*` 由 Next.js rewrites 转发到账号服务；`/api/agent/*` 由同源 Route Handler 在服务端注入 Agent 服务 token 后转发（运行时环境变量 `AGENT_SERVICE_URL` / `AGENT_SERVICE_TOKEN`），浏览器不持有该凭据。`BACKEND_URL` 在生产构建时生效，见下文「部署」。账号 UI 包构建产物缺失时，先运行 `just accounts-ui-check`。
 
 ## 检查
 
@@ -46,13 +46,15 @@ just web-e2e            # 真实浏览器端到端测试（需要本机装有 Ch
 - 密码规则（至少 8 个字符、最多 128 字节）由 `@tpl/accounts-ui` 提供，与账号服务保持一致。
 - `/auth/*` 的 401 是预期内的业务结果（密码错误、未登录），**不会**触发全局的「跳转登录页」，否则登录失败时页面会被整体刷新、错误提示丢失。
 
+Agent 工作台（`/app/agents`）通过 `/api/agent/v1/*` 访问 Agent 服务：会话/消息、Run 事件与 SSE、资源上传、产物下载。Agent 服务本身不信任浏览器自报身份，Route Handler 必须原样转发 `session` Cookie；服务 token 只存在于 Next 服务端环境。SSE 的 `data` 是完整 `RunEvent` JSON，错误按 `code` 映射到 `agentErrors` 文案。
+
 ## 部署
 
 ```bash
 just web-docker-build http://accounts:8080    # 根目录为构建上下文，包与站点一起打包
 ```
 
-- **账号服务地址必须在构建时给**：Next.js 把 rewrites 的目标固化进 `.next/routes-manifest.json`，运行时再改环境变量不会生效。
+- **账号服务地址必须在构建时给**：Next.js 把 rewrites 的目标固化进 `.next/routes-manifest.json`，运行时再改环境变量不会生效。Agent 服务地址与 token 是运行时环境变量，改后重启容器即可。
 - 镜像是 Next.js standalone 产物，以非 root 用户运行，监听 3000。
 - **限流依赖客户端 IP，而 Next.js 不会帮你写 `X-Forwarded-For`**：它的 rewrite 代理把客户端发来的头原样透传。所以只靠这个镜像，后端看到的 TCP 对端永远是 Next.js（所有用户共用一个 IP 额度）；这时若开 `APP_AUTH__TRUST_FORWARDED_FOR=true`，攻击者每次换一个伪造 IP 就能绕过限流。**生产部署要在前面放一层会覆盖写该头的 nginx / Traefik / 云负载均衡**，参考根目录 `docker-compose.yml` 的 `edge` 服务与 `docs/guides/deployment.md`。
 - 生产环境（HTTPS）后端必须设置 `APP_AUTH__COOKIE_SECURE=true`，否则会话 Cookie 可能经明文传输。
@@ -62,10 +64,12 @@ just web-docker-build http://accounts:8080    # 根目录为构建上下文，�
 ```
 app/(marketing)/   营销页（首页、功能、定价、关于）
 app/(auth)/        登录、注册
-app/(app)/app/     登录后的区域（dashboard、settings），布局里用 /auth/me 做守卫
+app/(app)/app/     登录后的区域（dashboard、settings、agents），布局里用 /auth/me 做守卫
+app/api/agent/     Agent 服务同源 Route Handler（服务端注入 token，SSE 流式转发）
 components/        布局与 shadcn/ui 组件
 components/accounts/  Next.js 路由、next-intl、导航和 toast 与账号 UI 包之间的适配
-lib/api/           账号服务客户端适配、错误码→翻译
+components/agent/  Agent 工作台（会话、消息、Run 进度、产物）
+lib/api/           账号/Agent 服务客户端适配、错误码→翻译
 ../../packages/accounts-ui/  独立账号 React 页面、校验规则与 HTTP 客户端
 messages/          en.json、zh.json
 e2e/               真实浏览器端到端测试
@@ -76,4 +80,4 @@ e2e/               真实浏览器端到端测试
 
 ## 关于管理后台
 
-管理员 UI 位于独立的 `frontends/admin/` 项目，通过 `/admin/*` 接口访问同一个 `accounts-service`。普通用户认证包只包含 `/auth/*` 和 `session` Cookie，不复用管理员页面、Cookie 或会话存储。
+管理员 UI 位于独立的 `frontends/admin/` 项目，通过 `/admin/*` 接口访问同一个 `accounts-service`，并通过 `/agent-api/*` 访问 `agent-service`（nginx 在服务端注入服务 token）。普通用户认证包只包含 `/auth/*` 和 `session` Cookie，不复用管理员页面、Cookie 或会话存储；管理员身份使用独立的 `admin_session` Cookie，不能用于 public Agent API。

@@ -59,3 +59,63 @@ cookie_name = "admin_session"
 login_max_failures_per_ip = 10        # 比普通登录更严
 login_max_failures_per_account = 5
 login_window_secs = 900
+
+# -----------------------------------------------------------------------------
+# Agent 服务（services/agent，独立进程 agent-service，默认端口 8091）
+# -----------------------------------------------------------------------------
+# 只有 Agent 服务读取 [agent] 子树；accounts 与 agent-tracing 不会读取它。
+# 数据库连接串由 DATABASE_URL（或 Nacos 应用 TOML 的 agent.database.url）注入；
+# 调用服务凭据与服务间 token 只从环境注入：
+#   AGENT_SERVICE_TOKENS_JSON       调用服务清单 [{"service_id":"web","token":"…"}]
+#   AGENT_TRACING_PRODUCER_TOKEN   向 agent-tracing 投递事件的 producer token
+#   AGENT_CREDENTIAL_<ALIAS>       外部 A2A Runtime 的 credential_alias 对应密钥
+# 未配置 producer token 时投递 worker 不启动，事件保留在 outbox 等待恢复。
+[agent]
+# 部署级平台管理员的 accounts ID；只允许创建组织与授权组织管理员，不自动获得组织 scope。
+platform_admin_ids = []
+
+[agent.server]
+host = "127.0.0.1" # 容器里由 Dockerfile 改成 "0.0.0.0"
+port = 8091
+
+[agent.logging]
+level = "info"   # 也可用 RUST_LOG 覆盖
+format = "text"  # "text"（本地阅读）或 "json"（日志采集）
+
+[agent.database]
+# url 来自 DATABASE_URL 或 Nacos；Agent 使用独立数据库，不与 accounts/tracing 共享。
+max_connections = 10
+acquire_timeout_secs = 3
+
+[agent.identity]
+# 用户与管理员身份分别经 accounts 的公开 HTTP 边界校验，不读取账号私有库。
+user_auth_url = "http://127.0.0.1:8080/auth/me"
+admin_auth_url = "http://127.0.0.1:8080/admin/auth/me"
+request_timeout_secs = 3
+
+[agent.storage]
+# 用户资源、Skill 资产与 Run 产物都落在这个目录；Compose 挂载独立数据卷。
+root = "./data/blobs"
+max_resource_bytes = 10485760 # 10 MiB
+max_artifact_bytes = 10485760 # 10 MiB
+
+[agent.execution]
+# 单次 A2A 请求（Agent Card 探测与消息发送）的超时。
+a2a_timeout_secs = 60
+
+[agent.tracing]
+# agent-tracing producer ingest 基础地址；投递路径固定为 /runs/{run_id}/events。
+ingest_url = "http://127.0.0.1:8090/api/v1/ingest"
+poll_interval_ms = 1000
+batch_events = 100 # tracing 契约上限 100
+# producer_token 只由 AGENT_TRACING_PRODUCER_TOKEN 注入，不写在这里。
+
+# builtin Runtime 由部署声明，全局只读；组织管理员只能接入外部 A2A Runtime。
+# 工具白名单是 Sandbox 的能力边界：只允许 text.summarize、artifact.write、delegate_task。
+[[agent.builtin_runtimes]]
+name = "platform-sandbox"
+display_name = "Platform Sandbox"
+adapter_kind = "sandbox"
+enabled = true
+allowed_tools = ["text.summarize", "artifact.write", "delegate_task"]
+max_steps = 8

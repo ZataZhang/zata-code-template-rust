@@ -4,12 +4,13 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useTranslations } from "next-intl"
 import { cn } from "@/lib/utils"
-import { LayoutDashboard, Settings } from "lucide-react"
+import { LayoutDashboard, Settings, Sparkles } from "lucide-react"
 import { LanguageSwitcher } from "@/components/language-switcher"
 
 /** 侧边栏导航项：href 与 `nav` 命名空间下的文案 key 一一对应。 */
 const navItems = [
   { href: "/app/dashboard", labelKey: "dashboard", icon: LayoutDashboard },
+  { href: "/app/agents", labelKey: "agents", icon: Sparkles },
   { href: "/app/settings", labelKey: "settings", icon: Settings },
 ] as const
 

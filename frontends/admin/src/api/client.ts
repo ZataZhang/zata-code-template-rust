@@ -102,3 +102,48 @@ export async function apiPost<T>(
     handleApiError(error)
   }
 }
+
+/** Agent 管理 API 的同源前缀；Vite/nginx 代理会在服务端注入服务凭据。 */
+const AGENT_API_BASE_URL = '/agent-api'
+
+/** 请求 Agent 管理 API，复用统一的错误体解析。 */
+async function agentRequest<T>(
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE',
+  path: string,
+  body?: unknown
+): Promise<T> {
+  try {
+    const response = await apiClient.request<T>({
+      baseURL: AGENT_API_BASE_URL,
+      url: path,
+      method,
+      data: body,
+    })
+    return response.data
+  } catch (error) {
+    handleApiError(error)
+  }
+}
+
+/** 发送 Agent 管理 GET 请求。 */
+export async function apiAgentGet<T>(path: string): Promise<T> {
+  return agentRequest<T>('GET', path)
+}
+
+/** 发送 Agent 管理 POST 请求。 */
+export async function apiAgentPost<T>(
+  path: string,
+  body?: unknown
+): Promise<T> {
+  return agentRequest<T>('POST', path, body)
+}
+
+/** 发送 Agent 管理 PUT 请求。 */
+export async function apiAgentPut<T>(path: string, body?: unknown): Promise<T> {
+  return agentRequest<T>('PUT', path, body)
+}
+
+/** 发送 Agent 管理 DELETE 请求。 */
+export async function apiAgentDelete<T>(path: string): Promise<T> {
+  return agentRequest<T>('DELETE', path)
+}

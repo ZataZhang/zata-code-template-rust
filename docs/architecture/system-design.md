@@ -1,6 +1,6 @@
 # 系统架构
 
-本仓库提供两个可独立部署的后端微服务：`accounts-service` 与 `agent-tracing`。账号服务负责认证与管理员身份；第二个 tracing 服务独立接收 Agent 事件、保存轨迹并提供管理员查询。两者各自拥有数据、迁移和配置，`agent-tracing` 不依赖账号私有领域实现。
+本仓库提供三个可独立部署的后端微服务：`accounts-service`、`agent-service` 与 `agent-tracing`。账号服务负责认证与管理员身份；Agent 服务拥有组织目录、Runtime、Business Agent、Session 与 Canonical Run，并通过 HTTP 调用 accounts 校验用户/管理员身份；tracing 服务独立接收 Agent 事件、保存轨迹并提供管理员查询。三者各自拥有数据、迁移和配置，后两个服务都不依赖账号私有领域实现。
 
 Cargo workspace 是单仓管理多个独立产物的方式：`services/accounts` 是账号服务 composition root；当前 `services/accounts/crates/*` 都是账号服务私有实现。前后端可经同源 nginx 路由接入账号服务。跨应用复用有两种部署选择：每个应用独立部署账号服务并配置自己的数据库/Redis；或明确选择共享同一账号域。当前没有 `tenant_id` / `app_id` 隔离，不能把共享实例视为彼此隔离的多租户账号系统。
 
@@ -8,7 +8,7 @@ Cargo workspace 是单仓管理多个独立产物的方式：`services/accounts`
 
 ### 设计范围与当前状态
 
-采用单仓 Cargo workspace 管理多个独立业务服务。`services/accounts/` 与 `services/agent-tracing/` 分别是独立 composition root；账号服务内部 package 放在 `services/accounts/crates/`，tracing 私有 package 放在 `services/agent-tracing/crates/`。以下约定继续适用于后续新增业务服务。
+采用单仓 Cargo workspace 管理多个独立业务服务。`services/accounts/`、`services/agent/` 与 `services/agent-tracing/` 分别是独立 composition root；账号服务内部 package 放在 `services/accounts/crates/`，Agent 私有 package 放在 `services/agent/crates/`，tracing 私有 package 放在 `services/agent-tracing/crates/`。以下约定继续适用于后续新增业务服务。
 
 当前优先保留已运行的账号边界；只有实际业务需要独立数据所有权、发布节奏或运行资源时才新增服务。注册、登录、管理员和用户管理继续属于账号服务。不要按 HTTP 端点、数据库表或技术层拆进程。一次请求必须跨多个服务才能完成的强一致业务，应先评估是否属于同一服务。
 
@@ -30,6 +30,20 @@ services/
       infrastructure/
     migrations/
     tests/
+  agent/                          # Agent 装配根、私有层、迁移、测试、OpenAPI
+    Cargo.toml                    # package tpl-agent；bin agent-service
+    src/
+      main.rs
+      composition.rs
+      dispatch.rs                 # queued Run 后台调度
+    crates/
+      core/                       # 组织/Agent/Run 用例、端口、事件契约
+      api/                        # public/admin 路由、DTO、身份提取器
+      engines/                    # Sandbox、A2A 1.0 JSON-RPC、Skill 运行机制
+      infrastructure/             # 配置、PostgreSQL、Blob、身份客户端、outbox
+    migrations/
+    tests/                        # 真实装配、HTTP 入口与依赖边界验证
+    openapi.yaml
   <service>/                      # 以下为未来服务模板
     Cargo.toml                    # package tpl-<service>，独立二进制
     src/
@@ -48,13 +62,13 @@ services/
         src/lib.rs
     migrations/                   # 该服务拥有的数据库迁移
     tests/                        # 真实装配、入口与依赖边界验证
-    config.toml                   # 该服务默认配置，不含密钥值
+    config.toml                   # 该服务默认配置，不含密钥值（Agent 例外：使用根 config.toml 的 [agent] 子树）
     Dockerfile                    # 从仓库根上下文构建该服务
     README.md                     # 启动、配置、API 与数据归属
     .sqlx/                        # 使用 SQLx 查询宏时保存离线元数据
 frontends/                           # 独立部署的前端应用
-├── public/                          # Next.js 公开站点
-├── admin/                           # Vite/React 管理后台
+├── public/                          # Next.js 公开站点；/api/agent/* 由同源 Route Handler 代理
+├── admin/                           # Vite/React 管理后台；/agent-api/* 由 nginx 代理
 └── tracing/                         # Vite/React 子服务，代理 accounts 与 agent-tracing HTTP API
 packages/                         # 前端复用包
 deploy/                           # 网关与部署配置
@@ -65,7 +79,7 @@ platform/                         # 无业务归属的共享平台 crate
 
 包名使用业务前缀，例如 `tpl-orders-core`，避免多个服务都叫 `tpl-core`。`engines` 只在确有平台能力适配需求时增加。Rust 模块不需要独立的 `Cargo.toml`；只有独立 package 才需要清单。
 
-当前 workspace 成员是 `platform/*`、`services/*`、`services/accounts/crates/*`、`services/agent-tracing/crates/*`、`tools/*`。新增服务及其私有 package 时，在根 `Cargo.toml` 显式登记对应路径。依赖版本仍由根 `[workspace.dependencies]` 管理，每个服务单独选择依赖。
+当前 workspace 成员是 `platform/*`、`services/*`、`services/accounts/crates/*`、`services/agent/crates/*`、`services/agent-tracing/crates/*`、`tools/*` 和 `examples/agent-business-service`。新增服务及其私有 package 时，在根 `Cargo.toml` 显式登记对应路径。依赖版本仍由根 `[workspace.dependencies]` 管理，每个服务单独选择依赖。
 
 新服务内部依赖关系：
 
@@ -83,27 +97,27 @@ platform-<capability>  → 不依赖任何业务服务
 
 ### 数据与事务
 
-每个服务拥有自己的表、迁移和数据库凭据。初期可以共用 PostgreSQL 实例，但使用独立数据库与权限；其他服务不得跨库查询、建立跨服务外键或执行其迁移。业务记录可保存账号服务返回的用户 ID，账号存在性与状态通过公开 API 确认。
+每个服务拥有自己的表、迁移和数据库凭据。初期可以共用 PostgreSQL 实例，但使用独立数据库与权限；其他服务不得跨库查询、建立跨服务外键或执行其迁移。业务记录可保存账号服务返回的用户 ID，账号存在性与状态通过公开 API 确认。Agent 服务使用独立 `agent` 数据库保存组织、Agent、Session/Run/事件、outbox 与元数据，用户资源、Skill 资产和 Run 产物正文放在独立 Blob 卷，不进入 PostgreSQL 或其它服务。
 
 Redis 可以共用实例，但服务应有独立键前缀、访问权限和容量规划；账号 Cookie、会话和限流键仍只归账号服务管理。其他服务不得解析账号 Redis。
 
-事务只覆盖本服务数据。涉及多个服务时，先定义失败后的业务处理与幂等规则；确有可靠异步投递需求时，再设计 outbox、事件消费与补偿。当前不默认引入消息队列或分布式事务。
+事务只覆盖本服务数据。涉及多个服务时，先定义失败后的业务处理与幂等规则；确有可靠异步投递需求时，再设计 outbox、事件消费与补偿。当前不默认引入消息队列或分布式事务。Agent 服务的 tracing 投递采用本地 outbox：Run 状态与事件在同一事务提交，后台 worker 按持久序号幂等投递；tracing 不可用只推迟投递，不阻塞或回滚 Run。
 
 ### 入口、身份与服务间通信
 
-浏览器经同源 nginx 访问各服务，由网关按路径路由；现有账号 `/api/auth/*`、`/api/admin/*` 路径保持既有契约。新服务使用明确的业务路径，接入时同步前端 API 客户端与网关配置，不复用账号路由前缀。
+浏览器经同源 nginx 访问各服务，由网关按路径路由；现有账号 `/api/auth/*`、`/api/admin/*` 路径保持既有契约。Agent 服务分别使用 `/api/v1/*`（public）与 `/admin/api/*`（管理面），公开站点由 Next.js Route Handler 把 `/api/agent/*` 转发到 Agent 服务，管理后台 nginx 把 `/agent-api/*` 转发到 Agent 服务；两处都在服务端注入调用服务 token，浏览器不持有。接入新服务时同步前端 API 客户端与网关配置，不复用账号路由前缀。
 
 初期服务间调用采用 HTTP，客户端适配器放在调用方的 infrastructure，用例通过自身 core 端口调用。每次外部调用必须有超时和输入/响应大小上限；只对可安全重复的操作做有限重试。写操作需要重试时先定义幂等契约。避免循环调用和过长的同步调用链。
 
-普通用户身份沿用 [账号接入指南](../guides/accounts-integration.md)：业务后端向账号服务 `/auth/me` 验证原始普通用户 Cookie，随后执行本服务自己的授权规则。管理员使用独立契约。不得信任浏览器自报的用户 ID。服务自身身份与用户身份分别设计；无用户会话的后台任务必须在落地时明确服务鉴权和授权方式，当前没有现成的服务令牌协议。
+普通用户身份沿用 [账号接入指南](../guides/accounts-integration.md)：业务后端向账号服务 `/auth/me` 验证原始普通用户 Cookie，随后执行本服务自己的授权规则。管理员使用独立契约。不得信任浏览器自报的用户 ID。Agent 服务对每个请求同时校验调用服务 Bearer token 与用户/管理员 Cookie：public 用户使用 `session` Cookie 查询 accounts `/auth/me`，管理员使用 `admin_session` Cookie 查询 `/admin/auth/me`；身份服务不可用时 fail-closed。服务自身身份与用户身份分别设计；无用户会话的后台任务必须在落地时明确服务鉴权和授权方式，当前没有现成的服务令牌协议。
 
 公开 HTTP 契约由服务所有者维护，明确请求、响应、错误码及兼容性；兼容字段采用增量演进，破坏性变更需安排调用方迁移。领域结构体不直接充当跨服务契约。暂不建设共享 DTO package；确有多个调用方需要 SDK 时再单独规划。
 
 ### 配置、运行与发布
 
-每个服务独立读取配置、注入密钥、构建镜像和发布。账号服务使用根 `config.toml`，Agent tracing 使用 `services/agent-tracing/config.toml` 和独立的数据库连接配置；不能隐式读取账号数据库连接串。根 Compose 组合两项后端服务与三个独立前端，tracing UI 的 nginx 按路径代理管理员认证、轨迹查询和 producer 写入请求。
+每个服务独立读取配置、注入密钥、构建镜像和发布。账号服务与 Agent 服务都读取根 `config.toml`（Agent 只读 `[agent]` 子树），Agent 的数据库连接由独立的 `DATABASE_URL` 或 Nacos `agent.database.url` 提供；Agent tracing 使用 `services/agent-tracing/config.toml` 和独立的数据库连接配置。任何服务不能隐式读取账号数据库连接串。根 Compose 组合三个后端服务、三套 PostgreSQL、Redis 与三个独立前端：`agent-service` 使用独立 `agent` 数据库和 Blob 卷；public 站点与 admin nginx 在服务端注入 Agent 调用凭据；tracing UI 的 nginx 按路径代理管理员认证、轨迹查询和 producer 写入请求。
 
-根 Compose 负责组合本地整站，服务可以单独启动其必要依赖。初期继续使用 Compose 网络 DNS 与现有 nginx，无需预先引入注册中心、专用 API 网关、Kubernetes 或服务网格。每个服务提供 `/live` 与 `/ready`、优雅退出、结构化日志；增加第二个服务的跨服务调用时同步贯通请求关联 ID，并确保凭据不进入日志。
+根 Compose 负责组合本地整站，服务可以单独启动其必要依赖。初期继续使用 Compose 网络 DNS 与现有 nginx，无需预先引入注册中心、专用 API 网关、Kubernetes 或服务网格。每个服务提供 `/live` 与 `/ready`、优雅退出、结构化日志；增加第二个服务的跨服务调用时同步贯通请求关联 ID，并确保凭据不进入日志。Agent 的 `/ready` 检查自身 PostgreSQL；tracing 故障不改变它的就绪状态。
 
 CI 可统一触发，但必须能够按 package 构建、按服务生成镜像和选择发布目标；同一 workspace 不要求所有服务同时部署。SQLx 离线元数据按服务维护，新服务的 Docker/CI 必须明确从该服务目录读取对应元数据，不能误用根目录的账号元数据。实际 SQLx 配置方式在新增服务时验证并记录。
 
@@ -115,12 +129,12 @@ CI 可统一触发，但必须能够按 package 构建、按服务生成镜像�
 4. 提供独立启动、镜像、网关路由及 Compose 接入，明确数据库、Redis 与配置归属。
 5. 按测试规范验证真实服务入口、真实数据依赖与跨服务身份链路，再记录证据；涉及 PRD 时遵循领取锁、交付和归档流程。
 
-新增服务需要承担部署、网络失败处理与验证成本；因此每项服务都应有明确数据所有权和独立交付理由。当前 tracing producer 使用带 source/project 绑定的 HTTP/JSON 接入，并由 accounts 的公开管理员校验接口确认后台会话。
+新增服务需要承担部署、网络失败处理与验证成本；因此每项服务都应有明确数据所有权和独立交付理由。当前 tracing producer 使用带 source/project 绑定的 HTTP/JSON 接入，并由 accounts 的公开管理员校验接口确认后台会话；Agent 服务是其中一个 producer，浏览器不直接持有 producer token。
 
 ## 架构原则
 
 - **依赖向内**：外层可以依赖内层，内层不能反向依赖外层。最内层是 `tpl-core`。
-- **服务与平台 crate 边界有两道防线**：依赖写在 Cargo.toml 里，没声明就无法 `use`（Cargo）；已声明的依赖由 `services/accounts/tests/architecture.rs` 对照允许名单，检查服务层方向、共享平台 crate 的依赖方向，并拒绝跨服务私有 crate 依赖。业务服务只允许由自己的 infrastructure 依赖 `platform/*`；平台 crate 不得依赖业务服务。
+- **服务与平台 crate 边界有两道防线**：Cargo 阻止使用未声明的依赖；账号与 Agent 服务各自的架构守卫对照允许名单检查层间方向，并拒绝跨服务私有 crate 依赖。账号服务守卫还检查共享平台 crate 的方向。业务服务只允许由自己的 infrastructure 依赖 `platform/*`；平台 crate 不得依赖业务服务。
 - **端口与适配器**：core 只定义端口（trait）；基础设施与平台能力提供适配器（实现）；装配层把适配器接到用例上。
 - **按职责分层**：按变化率和业务边界分层，而不是按技术栈堆目录。
 - **可替换实现**：数据库、HTTP 客户端、日志、配置都在外层，core 只依赖接口。
@@ -190,6 +204,18 @@ flowchart TD
     Infra -->|redis| RD[("Redis")]
 ```
 
+## Agent 服务（`services/agent`）
+
+独立二进制 `agent-service`，默认监听 8091，是 Organization / Runtime / Business Agent / Session / Canonical Run 的唯一服务入口。内部 package：`tpl-agent-core`（组织、Agent、Session、Run 用例与端口，事件契约，不依赖其它内部 crate）、`tpl-agent-api`（public 与 admin 路由、DTO、服务/用户/管理员身份提取）、`tpl-agent-engines`（Sandbox、A2A 1.0 JSON-RPC 与 Skill 运行机制）、`tpl-agent-infrastructure`（配置、PostgreSQL、Blob、accounts 身份客户端、tracing outbox）。装配根是 `services/agent`；`dispatch.rs` 轮询 queued Run，`mark_run_started` 作为幂等闸门，重复调度不会重复执行。
+
+数据所有权：组织/部门/membership/admin scope、Runtime connection、Business Agent 与访问规则/入口策略/委派策略、Skill 与资产授权、Chat Session/Message、Run 与持久事件、幂等键、用户资源、Run 产物与审计都在 `agent` 数据库；正文在 Blob 卷。没有 AgentVersion 表，Run 创建时冻结 Agent/Runtime/输入/路由与授权快照。Agent 只保存 accounts 返回的整数用户/管理员 ID，不建立跨库外键、不读取账号 Redis。
+
+Run 管线：public 用户发送消息后，服务在本地事务写入 Run（含快照）、首条事件、消息映射与 outbox，然后由后台调度按并发上限执行。执行器按 Runtime 快照选择 Sandbox 或外部 A2A；Sandbox 只提供 `text.summarize`、`artifact.write`、`delegate_task` 三个进程内受限工具，不取得容器、宿主进程或网络权限。委派只对同组织、策略白名单内的子 Agent 生效，并受深度与子 Run 预算限制。取消是协作式的：记录 `run.cancelling` 并在工具调用之间停止，已完成的委派或产物副作用不回滚。
+
+事件与 tracing：Run 事件从 1 开始持久单调编号，SSE 与 outbox 共用同一事实源。SSE 事件的 `data` 是完整 `RunEvent`（`run_id`、`seq`、`event_type`、`occurred_at`、`payload`），客户端可按 `after_seq` 续读。outbox worker 只发送白名单事件类型与低敏字段，凭据/提示词正文/工具参数按契约被拒绝或脱敏为 `[已脱敏]`，按批次与字节上限投递到 agent-tracing producer；失败按退避重试，不直接写 tracing 数据库。
+
+维护细节、配置键与错误码见 [`docs/guides/agent-service.md`](../guides/agent-service.md)。
+
 ## 一个请求怎么走：`GET /ready`
 
 1. `tpl-api` 的 `ready` 处理器收到请求，调用 `HealthService::check_readiness()`（core 的用例）
@@ -258,18 +284,24 @@ flowchart TD
 
 ## 前端如何接入
 
-完整部署中，浏览器与前台站点同源访问，nginx 网关把 `/api/*` 转给独立账号服务。Next.js dev rewrites 仅用于本地开发：
+完整部署中，浏览器与前台站点同源访问，`edge` 把 `/api/auth/*` 转给独立账号服务、把 `/api/agent/*` 转给 Next.js Route Handler（服务端注入 Agent 服务凭据）。Next.js dev rewrites 仅用于本地开发的账号路由：
 
 ```mermaid
 sequenceDiagram
     participant B as 浏览器
-    participant N as nginx 网关
+    participant N as edge(nginx)
     participant W as Next.js（公开站点）
     participant A as accounts-service
+    participant G as agent-service
     B->>N: POST /api/auth/login（同源，带 Cookie）
     N->>A: POST /auth/login（nginx 覆盖写 X-Forwarded-For）
     A-->>N: 200 + Set-Cookie: session=…; HttpOnly; SameSite=Lax
     N-->>B: 原样转发响应与 Set-Cookie
+    B->>N: POST /api/agent/v1/organizations/{id}/sessions/{id}/messages
+    N->>W: 转发到 Route Handler（带原始 Cookie）
+    W->>G: 注入 Bearer 服务凭据 + Cookie
+    G-->>W: SSE / JSON
+    W-->>B: 流式响应
     N->>W: GET /login 等页面请求
     W-->>N: 页面响应
 ```
@@ -277,8 +309,9 @@ sequenceDiagram
 要点：
 
 - **同源**：浏览器看到的始终是前台站点的域名，所以 Cookie 是第一方的，`SameSite=Lax` 与「写接口只收 JSON」这套 CSRF 防护成立；不需要开放 CORS。
-- **公开站点后端地址在构建时固化**（保留的 `BACKEND_URL` 构建参数指向 accounts-service），运行时改环境变量无效。完整部署中由 `edge` 把 `/api/*` 直接转给账号服务；Next.js rewrite 仅供本地开发。
-- **Next.js rewrite 不会追加 `X-Forwarded-For`**，所以独立开发模式必须关闭 `trust_forwarded_for`。完整部署中 nginx 网关覆盖写该头并把 `/api/` 转给账号服务；账号服务不对外发布端口，外部无法绕过网关，详见 `docs/guides/deployment.md`。
+- **公开站点后端地址在构建时固化**（保留的 `BACKEND_URL` 构建参数指向 accounts-service），运行时改环境变量无效。完整部署中由 `edge` 把 `/api/auth/*` 直接转给账号服务；Next.js rewrite 仅供本地开发。
+- **Agent 调用凭据只在服务端**：public 的 `/api/agent/*` Route Handler 与 admin nginx 的 `/agent-api/*` 注入 Bearer token；浏览器、前端构建产物和日志里都不出现。Agent 服务自身仍要求用户/管理员 Cookie，双重校验后才执行业务。
+- **Next.js rewrite 不会追加 `X-Forwarded-For`**，所以独立开发模式必须关闭 `trust_forwarded_for`。完整部署中 nginx 网关覆盖写该头并把 `/api/auth/` 转给账号服务；账号服务不对外发布端口，外部无法绕过网关，详见 `docs/guides/deployment.md`。
 - 前端按后端返回的**错误码**（不是文案）取翻译，所以提示语言跟随界面语言；契约细节见 `frontends/public/README.md`。
 
 身份边界与其他应用的接入方式见 [`docs/guides/accounts-integration.md`](../guides/accounts-integration.md)：其他业务后端可将原始会话 Cookie 转发给账号服务的 `/auth/me` 验证后使用返回的用户 ID；不得信任浏览器自报的用户 ID，也不得直接访问账号 Redis 或数据库。当前不提供 JWT/OIDC。

@@ -5,7 +5,7 @@
 > ✅ **交付前置**：无，可立即开工。
 > 结构化声明见 §8 Delivery Dependencies，**那里是唯一事实源**。
 
-> ⬜ **验收状态**：未开工。
+> 🧍 **验收状态**：待人工验收 — 执行侧已完成实现与 rv-1～rv-6 真实入口验证，剩余 7 项 Human-Confirmed 等待人工确认，详见 §13 Final Reconciliation。
 > 本行是 §9 Acceptance Checklist 的投影，**那里是唯一事实源**。
 
 本 PRD 分为两部分：Part A 用行为样例和待确认决策锁定目标；Part B 记录代码库边界、实现建议和验收证据。
@@ -324,12 +324,14 @@ frontends/public/README.md [修改] 【总结】同步前台 Agent API 类型、
 
 | Change point | Tier | Decisive dimension / override | Intervention | Oracle / gate |
 |---|---|---|---|---|
-| Organization membership, Runtime binding, Agent ACL, Session/Run and event/outbox schema | R2 | Persistent data and idempotent transaction; database schema is a human-confirm fixed zone | 用户确认组织数据所有者及 ER 图；迁移往返与授权/状态机由执行侧验证 | rv-1、rv-2、rv-3 |
+| Organization membership, Runtime binding, Agent ACL, Session/Run and event/outbox schema | R2 | Persistent data and idempotent transaction; database schema is a human-confirm fixed zone | 用户确认组织数据所有者及 ER 图；迁移往返与授权/状态机由执行侧验证 | rv-1、rv-2、rv-3、rv-5 |
 | Auto routing, Skill/resource snapshot, delegation and cancellation semantics | R2 | Core business orchestration and idempotent side effects are fixed-zone behavior | 用户确认通用能力迁移范围；真实 Run lifecycle gate | rv-1 |
-| Service identity, user authorization, sensitive event projection | R3 | Authentication trust boundary and possible credential/data exposure | 用户确认信任与数据可见范围；真实入口负控验证拒绝/脱敏 | rv-2 |
-| Public Session workspace, admin organization/runtime/agent workflow and configured Runtime execution | R2 | Cross-component user behavior and external runtime | 用户查看真实入口证据；端到端执行与 fresh read | rv-1 |
+| Service identity, user authorization, sensitive event projection | R3 | Authentication trust boundary and possible credential/data exposure | 用户确认信任与数据可见范围；真实入口负控验证拒绝/脱敏 | rv-2、rv-5 |
+| Public Session workspace, admin organization/runtime/agent workflow and configured Runtime execution | R2 | Cross-component user behavior and external runtime | 用户查看真实入口证据；端到端执行与 fresh read | rv-1、rv-6 |
 | Tracing outage recovery and event order | R2 | Persistent retry/checkpoint behavior across services | 真实停启 tracing 并从独立查询端核对 | rv-3 |
 | Agent composition root, configuration, and Compose startup | R2 | Startup/health order affects all Agent consumers and live execution | Compose config/healthy startup gate plus full Run entry | rv-1 |
+| Request body, collection, upload, Provider timeout and dispatch concurrency boundaries | R3 | Resource exhaustion and unbounded external waits can take down the service | 真实入口超限/超时负控与阈值来源核对 | rv-4 |
+| Independent business service over the Agent HTTP contract | R2 | Cross-service contract drift or accidental private coupling | 独立样例经真实 HTTP 调用并逐字段对照 | rv-5 |
 | Generated route/client/type registration | R1 | Contained interface plumbing with clear compiler/e2e failure | 执行者按现有 frontend checks 和 browser e2e 验证 | web check/e2e + contract checks |
 
 ### 7.4 Data, Identity, and Deployment Boundaries
@@ -386,7 +388,7 @@ flowchart LR
 
 ### 7.6 Realistic Validation Plan
 
-真实 Runtime 验证使用部署配置中的 Sandbox 或 A2A 凭据，并单独记录环境与 adapter。可用本地 A2A protocol fixture 验证外部协议映射，但不能用它替代至少一种实际配置 Runtime 的运行验收；fixture 不得替换 Agent 编排、持久化、accounts 身份校验或 tracing producer。真实模型/Runtime 响应记录实际结果、尝试和事件，不要求固定回答文本、成功次数或成功率。
+真实 Runtime 验证使用部署配置中的 Sandbox 或 A2A 凭据，并单独记录环境与 adapter。可用本地 A2A protocol fixture 验证外部协议映射，但不能用它替代至少一种实际配置 Runtime 的运行验收；fixture 不得替换 Agent 编排、持久化、accounts 身份校验或 tracing producer。独立部署的官方 SDK 参考实现可作为“实际配置 Runtime”的运行记录，但必须单独记录实现、版本、来源与非生产属性，不能据此宣称第三方生产可用性。真实模型/Runtime 响应记录实际结果、尝试和事件，不要求固定回答文本、成功次数或成功率。
 
 ```yaml
 - id: rv-1
@@ -438,9 +440,63 @@ flowchart LR
   forbidden_bypasses: 直接插入 tracing 表、只验证 mock HTTP 请求次数、不真实重启 tracing 服务
   fresh_state_probe: 使用新 Run ID，在 tracing 停止前确认该 ID 无记录，恢复后轮询独立 tracing API
   final_tree_evidence: 保存故障注入时间线、Run 状态、outbox 前后状态和 tracing 事件序号清单
+  negative_control: 真实停止 tracing 进程作为故障注入；若 Run 因 tracing 不可用失败、outbox 丢事件或恢复后重复/乱序，对应检查 FAIL
+  expected_fail: tracing 停机期间 Run 失败、恢复后事件缺失/重复/乱序，或 Agent 崩溃，验收必须失败
+
+- id: rv-4
+  behavior: 真实 Agent HTTP 入口对请求体大小、正文长度、集合引用数量、资源上传大小、A2A Provider 等待时间和调度并发执行上限校验；超限请求返回约定的 JSON 错误码，Provider 超时写成 Failed 终态而非挂起
+  reviewer: verifier
+  real_entry: 新增 tasks/evidence/P1-FEAT-20261030-092543-agent-service-runtime/scripts/rv-4-boundary-limits.sh，先运行 organization-runtime-session-lifecycle 准备组织与 Agent，再通过真实 Agent HTTP 入口发送超限/限额内请求
+  expected: 300 KiB JSON → 413 payload_too_large；100,001 字符正文 → 400 invalid_request；21 个 resource_ids/skill_ids → 400 invalid_request；20 个引用通过数量校验；事件 limit 被钳制到 [1,200]；10 MiB+1 上传 → 413，限额内上传成功；A2A 无响应在 60s 超时后写成 failed 并记录 a2a_request_failed；并发 4 时 5 个 SLOW Run 为 4 running/1 queued，取消后全部终态
+  mock_boundary: Agent API/DB、accounts 身份边界、tracing、public/admin 前端真实；外部 A2A endpoint 由本地 fixture 提供 HANG/SLOW 行为；阈值来自生产代码常量
+  tier: R3
+  test_layer: e2e
+  required_for_acceptance: true
+  critical_value_source: 超限响应状态码/错误码来自真实 HTTP API；Run 状态与并发计数来自 Agent 数据库独立 SQL；超时观察使用实际耗时
+  must_cross: 外部 HTTP 入口 → 请求体/参数校验中间件 → Agent 用例 → A2A adapter → Agent DB 状态机 → 调度器
+  forbidden_bypasses: 仅调用内部函数、直连数据库、跳过认证、用测试开关降低阈值、用 A2A fixture 结果替代真实 Runtime 可用性
+  fresh_state_probe: 每轮创建新 Session/Run 与上传文件；超时 Run 与并发 Run 在观察前不存在
+  final_tree_evidence: rv-4-boundary-limits.txt 记录阈值来源、请求/响应、Run 状态、时间线与并发观察；改动边界常量后重跑
+  negative_control: 该探测在修复前真实变红（413 纯文本、public 上传在 256 KiB 处连接重置）；移除 413 归一化或恢复上传全局上限会重现失败
+  expected_fail: 超限请求被接受、错误码不符合契约、Provider 超时不生效或并发超过上限时，对应检查 FAIL，命令非零退出
+
+- id: rv-5
+  behavior: 独立业务微服务示例只经 Agent HTTP 契约创建、查询和取消 Run；响应与错误码与 OpenAPI/手写客户端类型一致，且示例不配置 Agent 数据库或依赖 Agent 私有 crate
+  reviewer: verifier
+  real_entry: 新增 examples/agent-business-service 与 business-service-sample 场景；示例只配置 AGENT_BASE_URL/AGENT_SERVICE_TOKEN，经真实 HTTP 调用 Agent
+  expected: 创建 201/created=true；幂等重放 200/created=false 且同一 Run；GET 与 Agent 直连逐字段一致；取消返回 cancelled_immediately 且终态一致；404 run_not_found/401 unauthenticated/400 invalid_request 透传；cargo tree 不含 tpl-agent/sqlx/postgres/redis
+  mock_boundary: Agent 服务、accounts、tracing、public/admin 前端和示例进程真实；外部 A2A endpoint 由本地 fixture 模拟
+  tier: R2
+  test_layer: e2e
+  required_for_acceptance: true
+  critical_value_source: 示例响应与 Agent 直连响应逐字段比较；Run/Session 值来自 Agent 写入后的独立查询
+  must_cross: 示例 HTTP 客户端 → Agent HTTP API → accounts 身份校验 → ACL → Run 状态机 → Agent DB
+  forbidden_bypasses: 示例直连 Agent 数据库、复用 Agent 私有 crate、伪造响应或错误码
+  fresh_state_probe: 每轮生成新组织/成员/Agent/Session/Idempotency-Key
+  final_tree_evidence: rv-5-business-service-sample.txt 记录创建/重放/查询/取消/错误透传与依赖树；示例或契约变更后重跑
+  negative_control: 不存在的 Run、缺少 Cookie、缺少 Idempotency-Key 三种真实负控必须透传 Agent 错误码
+  expected_fail: 示例伪造成功、改写错误码或依赖数据库/私有 crate 时，对应检查 FAIL，命令非零退出
+
+- id: rv-6
+  behavior: 至少一种独立部署的目标 Runtime 有真实运行记录：以真实 Agent Card 登记外部 Runtime，并通过管理入口与 public 入口完成组织、Agent、Session 和 Run 全链路
+  reviewer: human
+  presentation: rv-6-real-runtime.txt 中 REAL_RUNTIME_RESULT、真实 Agent Card 元数据与实现来源；同场景截图见 §9.1（本地验证）
+  real_entry: AGENT_E2E_REAL_RUNTIME=1 配合独立部署的官方 a2a-sdk==1.3.0 参考 Runtime；以 uv/Python 3.12 启动并读取 /.well-known/agent-card.json
+  expected: Runtime 登记后探测 Ready；Agent 绑定该 Runtime；Run 到达 succeeded 且回复来自独立实现；类型/版本/来源/脚本 sha256 记录在证据中
+  mock_boundary: Runtime 是真实独立进程（官方 SDK 参考实现），不是仓库内 fixture；tracing、Agent DB、accounts 身份和前端真实；fixture 仅用于失败/取消分支
+  tier: R2
+  test_layer: e2e
+  required_for_acceptance: true
+  critical_value_source: Agent Card 元数据来自独立 Runtime；Run 状态与回复来自 Agent DB/Session 独立查询；REAL_RUNTIME_RESULT 记录实际运行值
+  must_cross: 管理后台 → Agent HTTP API → Runtime 探测 → A2A JSON-RPC 1.0 → 独立 Runtime → Agent DB/outbox → tracing
+  forbidden_bypasses: 用仓库内 A2A fixture 冒充真实 Runtime、伪造 Agent Card 或回复、跳过真实网络调用
+  fresh_state_probe: 每轮生成新组织/成员/Agent/Session 和 Run；Runtime 端口与实例独立
+  final_tree_evidence: rv-6-real-runtime.txt 记录卡片、实现版本、来源、脚本 sha256、运行结果与完整检查列表；adapter 或 Runtime 版本变化后重跑
+  negative_control: 修复前该场景真实失败（携带 taskId 的直接 Message 被误当 Task 轮询，GetTask 返回 -32001）；恢复旧逻辑会再次失败
+  expected_fail: Runtime 未登记/未 Ready、Run 非 succeeded 或回复非独立实现产出时，检查 FAIL 且命令非零退出
 ```
 
-Human-decision oracle map: D-01 → rv-1 and rv-2; D-02 → rv-1; D-03 → rv-1; D-04 → rv-2; D-05 → rv-1, rv-2 and rv-3; D-06 → rv-1. D-07 is already confirmed in §13. These IDs stay in Part B and do not appear in the human-facing behavior table.
+Human-decision oracle map: D-01 → rv-1 and rv-2; D-02 → rv-1 and rv-6; D-03 → rv-1; D-04 → rv-2 and rv-5; D-05 → rv-1, rv-2, rv-3, rv-5 and rv-6; D-06 → rv-1 and rv-5. D-07 is already confirmed in §13. These IDs stay in Part B and do not appear in the human-facing behavior table.
 
 失败排查先核对 Agent 数据库/outbox 游标，再检查 tracing producer 确认点和 Nacos Runtime/数据库配置；本地 A2A fixture 结果不得标作真实外部 Runtime 验收。
 
@@ -474,6 +530,22 @@ No external validation required; repository evidence was sufficient.
 |---|---|---|
 | 组织管理员查看内置 Runtime 并接入 A2A、创建授权 Agent；用户创建 Session 并完成 Run，tracing 页面显示同一 Run 的脱敏事件。 | 目标原型 docs/prototypes/agent-service-runtime.html；交付截图 tasks/evidence/P1-FEAT-20261030-092543-agent-service-runtime/rv-1/organization-runtime-agent.png、user-session-run.png、tracing-run.png；交付时同步写入 tasks/evidence/P1-FEAT-20261030-092543-agent-service-runtime/P1-FEAT-20261030-092543-agent-service-runtime.evidence-report.md 的 Human Review Navigation。 | 执行 open "docs/prototypes/agent-service-runtime.html"；执行 open "tasks/evidence/P1-FEAT-20261030-092543-agent-service-runtime/rv-1/"；在真实 Session/Run 页面核对 Run ID、snapshot provenance 与 tracing 详情一致且状态为完成。 |
 
+本机验证截图（2026-11-04 真实 rv-1 场景运行；本地图片，GitHub 上不显示）：
+
+![组织管理员查看 Runtime 并配置 Agent](../evidence/P1-FEAT-20261030-092543-agent-service-runtime/rv-1/organization-runtime-agent.png)
+
+![用户在公开站点创建 Session 并完成 Run](../evidence/P1-FEAT-20261030-092543-agent-service-runtime/rv-1/user-session-run.png)
+
+![tracing 中同一 Run 的脱敏事件](../evidence/P1-FEAT-20261030-092543-agent-service-runtime/rv-1/tracing-run.png)
+
+目标原型与真实实现截图配对（同为 1500×1100 桌面视口、同类状态；原型数据为设计示例，实现数据来自 rv-1 真实运行；原型截图是设计意图，不是运行证据）：
+
+| 状态 | 目标原型（设计意图，非运行证据） | 真实实现（rv-1 运行证据） |
+|---|---|---|
+| 组织 / Runtime / Agent 管理 | ![原型：组织与 Agent 目录](../evidence/P1-FEAT-20261030-092543-agent-service-runtime/prototype/agent-service-runtime-admin.png) | ![实现：组织与 Agent 管理](../evidence/P1-FEAT-20261030-092543-agent-service-runtime/rv-1/organization-runtime-agent.png) |
+| 用户 Session / Run | ![原型：Session 工作台](../evidence/P1-FEAT-20261030-092543-agent-service-runtime/prototype/agent-service-runtime-session.png) | ![实现：用户 Session/Run](../evidence/P1-FEAT-20261030-092543-agent-service-runtime/rv-1/user-session-run.png) |
+| Tracing Run 详情 | ![原型：Tracing 详情](../evidence/P1-FEAT-20261030-092543-agent-service-runtime/prototype/agent-service-runtime-tracing.png) | ![实现：tracing Run 详情](../evidence/P1-FEAT-20261030-092543-agent-service-runtime/rv-1/tracing-run.png) |
+
 Verifier-only 结果故意不放在人读区：rv-2 的授权/脱敏负控、rv-3 的 tracing 故障恢复，以及契约、迁移、架构、构建和普通浏览器门禁只在下方证据包呈现，失败时再向人说明。
 
 交付消息必须带有本表内容，并将每张真实截图以内嵌 Markdown 图片展示；仅把截图存入 evidence 目录或只给出 open 命令都不算完成。图片使用相对路径；若截图只保存在本机，标注“本机验证截图”，不要把绝对个人目录写入提交或 PR。
@@ -492,44 +564,44 @@ Verifier-only 结果故意不放在人读区：rv-2 的授权/脱敏负控、rv-
 
 #### R3 Security Acceptance
 
-- [ ] rv-2 的 just agent-e2e --scenario authorization-and-redaction 报告证明无效服务/用户身份、越权 Run 和标记敏感值均按预期处理；报告包含状态码、Agent DB 前后记录、tracing fresh query 与日志断言。
-- [ ] 生产配置与日志审阅证明 Provider 密钥、服务凭据、Cookie、连接串不会出现在 API 响应、Agent 日志或 tracing 事件；证据链接到配置键和脱敏报告。
-- [ ] 对请求体、集合长度、Provider/工具等待时间及并发设置的边界验证通过；每项证据记录真实入口、阈值及超限观察。
+- [x] rv-2 的 just agent-e2e --scenario authorization-and-redaction 报告证明无效服务/用户身份、越权 Run 和标记敏感值均按预期处理；报告包含状态码、Agent DB 前后记录、tracing fresh query 与日志断言。（证据：`tasks/evidence/P1-FEAT-20261030-092543-agent-service-runtime/rv-2-authorization-and-redaction.txt`，32/32 项通过；证据报告“真实验证执行记录”）
+- [x] 生产配置与日志审阅证明 Provider 密钥、服务凭据、Cookie、连接串不会出现在 API 响应、Agent 日志或 tracing 事件；证据链接到配置键和脱敏报告。（证据：`docs/guides/agent-service.md` §7–§8 的字段白名单与密钥配置键；`services/agent/crates/infrastructure/src/config.rs` 对连接串/token 手写 `Debug`；rv-2 的“Agent 日志不包含标记秘密…”断言）
+- [x] 对请求体、集合长度、Provider/工具等待时间及并发设置的边界验证通过；每项证据记录真实入口、阈值及超限观察。（证据：`tasks/evidence/P1-FEAT-20261030-092543-agent-service-runtime/rv-4-boundary-limits.txt`，21/21 项通过；真实入口覆盖 256 KiB JSON、100,000 字符正文、20 个引用、10 MiB 上传、60s A2A 超时与并发 4。该探测发现并修复了两处真实缺陷：public 上传路由曾沿用 256 KiB 全局上限，以及框架 413 未按 JSON 错误契约返回；修复见 `services/agent/crates/api/src/server.rs` 与 `routes/public.rs`）
 
 #### R2 Behavior Acceptance
 
-- [ ] rv-1 的真实浏览器/API 报告记录从 UI 返回的 Run ID、写入后的 Agent 独立查询、tracing 查询的事件序号，并将三处原值核对一致；新增或改动入口后重跑并关联最终代码树。
-- [ ] rv-1 的生命周期报告证明相同幂等键返回同一 Run、Agent/Runtime 配置更新不改写旧快照，取消后不再启动新工作；每项状态从 Agent 服务独立读取。
-- [ ] 至少一个目标部署 Runtime 有真实运行记录：运行 AGENT_E2E_REAL_RUNTIME=1 just agent-e2e --scenario organization-runtime-session-lifecycle 并保存实际 Runtime 类型、配置来源和结果；若当前无可用 Runtime 凭据，明确记录 not run，不能用 A2A fixture 代替生产可用性验收。
-- [ ] rv-3 的 just agent-e2e --scenario tracing-outage-recovery 报告记录 tracing 容器停机前 fresh query、Agent Run 状态/outbox 游标、恢复后的 tracing 事件序号与唯一性；证据关联本次最终代码树。
-- [ ] 新业务微服务示例只调用 Agent HTTP 契约；其 Run 创建、查询、取消响应和错误码与 OpenAPI/手写客户端类型一致，且没有 Agent 数据库配置。
-- [ ] 更新前后的 Agent Run 均能从持久化数据重读；幂等重试不重复工具副作用、取消能停止后续执行，事件序号顺序可复核。
+- [x] rv-1 的真实浏览器/API 报告记录从 UI 返回的 Run ID、写入后的 Agent 独立查询、tracing 查询的事件序号，并将三处原值核对一致；新增或改动入口后重跑并关联最终代码树。（证据：`rv-1-organization-runtime-session-lifecycle.txt`、`rv-1-organization-runtime-agent.png`、`rv-1-user-session-run.png`、`rv-1-tracing-run.png`；报告“代码树与证据文件”记录工作树指纹）
+- [x] rv-1 的生命周期报告证明相同幂等键返回同一 Run、Agent/Runtime 配置更新不改写旧快照，取消后不再启动新工作；每项状态从 Agent 服务独立读取。（证据：同上，60/60 项通过；幂等、快照与取消断言均从 Agent 独立查询读取）
+- [x] 至少一个目标部署 Runtime 有真实运行记录：运行 AGENT_E2E_REAL_RUNTIME=1 just agent-e2e --scenario organization-runtime-session-lifecycle 并保存实际 Runtime 类型、配置来源和结果；若当前无可用 Runtime 凭据，明确记录 not run，不能用 A2A fixture 代替生产可用性验收。（证据：`tasks/evidence/P1-FEAT-20261030-092543-agent-service-runtime/rv-6-real-runtime.txt`，66/66 项通过；独立部署的官方 `a2a-sdk==1.3.0` 参考 Runtime，Agent Card `Real A2A SDK Echo`，JSONRPC/1.0，运行记录 `type=a2a implementation=a2a-sdk runtime_version=1.3.0 status=succeeded`，回复含 `Real A2A SDK reply`，fresh-state run_id 以证据文件为准；实现、来源与脚本 sha256 已记录。限制：该 Runtime 是本机部署的开源参考实现，不是第三方厂商生产端点，不能据此宣称生产可用性）
+- [x] rv-3 的 just agent-e2e --scenario tracing-outage-recovery 报告记录 tracing 容器停机前 fresh query、Agent Run 状态/outbox 游标、恢复后的 tracing 事件序号与唯一性；证据关联本次最终代码树。（证据：`rv-3-tracing-outage-recovery.txt`，20/20 项通过；报告记录工作树指纹）
+- [x] 新业务微服务示例只调用 Agent HTTP 契约；其 Run 创建、查询、取消响应和错误码与 OpenAPI/手写客户端类型一致，且没有 Agent 数据库配置。（证据：`examples/agent-business-service`；`tasks/evidence/P1-FEAT-20261030-092543-agent-service-runtime/rv-5-business-service-sample.txt`，22/22 项通过；创建 201/`created=true`、幂等重放 200/`created=false` 同一 Run、查询与取消响应与 Agent 直连逐字段一致，404 `run_not_found` / 401 `unauthenticated` / 400 `invalid_request` 透传；`cargo tree -p agent-business-service` 不含 `tpl-agent`/`sqlx`/`postgres`/`redis`，源码与清单无 Agent 数据库配置）
+- [x] 更新前后的 Agent Run 均能从持久化数据重读；幂等重试不重复工具副作用、取消能停止后续执行，事件序号顺序可复核。（证据：rv-1 的“首次幂等请求创建 Run”“同一幂等键返回同一 Run”“新 Run 使用更新后的快照，旧 Run 快照保持不变”“UI 取消后 Run 到达 cancelled”等断言）
 
 #### R1 Contract And Frontend Acceptance
 
-- [ ] frontends/public 的 /app/agents 与 admin 的 Agent 管理路由分别通过 just web-check、just web-admin-check 和适用的 just web-e2e；报告包含真实页面/API 路径与权限状态。
-- [ ] Agent producer 样例通过 agent-tracing 当前冻结事件 schema；契约差异同步 OpenAPI、public/admin 手写类型和前端错误码映射。
-- [ ] Cargo 依赖检查证明 tpl-agent-* crate 只依赖本服务允许层级；services/accounts/tests/architecture.rs 守卫覆盖新增 crate，且无跨服务私有 crate 依赖。
+- [x] frontends/public 的 /app/agents 与 admin 的 Agent 管理路由分别通过 just web-check、just web-admin-check 和适用的 just web-e2e；报告包含真实页面/API 路径与权限状态。（证据：`just web-check`、`just web-admin-check` 通过；Agent 路由的真实浏览器入口由 rv-1/rv-2 覆盖；`just web-e2e` 是 accounts 站点套件，不覆盖 Agent 路由，未单独运行）
+- [x] Agent producer 样例通过 agent-tracing 当前冻结事件 schema；契约差异同步 OpenAPI、public/admin 手写类型和前端错误码映射。（证据：rv-1/rv-3 的 tracing 投递与查询；`services/agent/openapi.yaml`、`frontends/public/lib/api/agent.ts`、`frontends/admin/src/api/agents.ts`）
+- [x] Cargo 依赖检查证明 tpl-agent-* crate 只依赖本服务允许层级；services/accounts/tests/architecture.rs 守卫覆盖新增 crate，且无跨服务私有 crate 依赖。（证据：`services/agent/tests/architecture.rs`、`services/accounts/tests/architecture.rs`；`just ci` 通过）
 
 #### Documentation Acceptance
 
-- [ ] docs/architecture/system-design.md、docs/guides/agent-service.md、docs/guides/configuration.md、docs/guides/deployment.md、config.toml 和 .env.example 描述一致的服务端口、配置来源、身份边界、健康检查与回滚方式。
-- [ ] migrations、SQLx/schema snapshot（若使用）及迁移说明体现 §2/§7 ER 图；无 accounts/tracing 外键、共享数据库或未经确认的旧数据导入。
-- [ ] public/admin 路由、API 错误码、builtin/external Runtime、Sandbox/A2A 限制、Skill/资源/产物、tracing 字段范围和未迁移业务能力均有可发现的中文说明。
+- [x] docs/architecture/system-design.md、docs/guides/agent-service.md、docs/guides/configuration.md、docs/guides/deployment.md、config.toml 和 .env.example 描述一致的服务端口、配置来源、身份边界、健康检查与回滚方式。（证据：上述文件均已更新；`just ci` 的 doc 步骤通过）
+- [x] migrations、SQLx/schema snapshot（若使用）及迁移说明体现 §2/§7 ER 图；无 accounts/tracing 外键、共享数据库或未经确认的旧数据导入。（证据：`services/agent/migrations/20261030073709_create_agent_service.sql` 仅含 Agent 库内引用；`services/agent/tests/architecture.rs` 与 `services/accounts/tests/architecture.rs` 通过）
+- [x] public/admin 路由、API 错误码、builtin/external Runtime、Sandbox/A2A 限制、Skill/资源/产物、tracing 字段范围和未迁移业务能力均有可发现的中文说明。（证据：`docs/guides/agent-service.md` §3–§7、§10–§11；`services/agent/openapi.yaml`）
 
 #### Validation Acceptance
 
-- [ ] 运行 just agent-e2e --scenario organization-runtime-session-lifecycle，实际经过浏览器、public API、Agent HTTP API、Agent 数据库/待发送事件、tracing producer 和 tracing 查询；Runtime 边界与其他真实组件按 §7.6 标注清楚。
-- [ ] 对照 ai-assistant 中实际存在的 Sandbox backend、A2A、工具、Skills、资源/产物、Auto/入口策略和 delegation，逐项运行 Run API adapter/真实入口验证；不支持的来源模式写明真实代码证据与排除理由。
-- [ ] 完成 docs/ai-standards/testing.md 所选的 fmt/lint/Rust service/web/Compose 验证；未运行命令明确写 not run，不用低层测试代替真实入口。
-- [ ] 运行 just prd check --structure-only tasks/pending/P1-FEAT-20261030-092543-agent-service-runtime.md；归档前运行 just prd check --archive-ready tasks/pending/P1-FEAT-20261030-092543-agent-service-runtime.md，Final Reconciliation 与横幅同步。
+- [x] 运行 just agent-e2e --scenario organization-runtime-session-lifecycle，实际经过浏览器、public API、Agent HTTP API、Agent 数据库/待发送事件、tracing producer 和 tracing 查询；Runtime 边界与其他真实组件按 §7.6 标注清楚。（证据：rv-1，60/60 项通过；报告“真实验证执行记录”）
+- [x] 对照 ai-assistant 中实际存在的 Sandbox backend、A2A、工具、Skills、资源/产物、Auto/入口策略和 delegation，逐项运行 Run API adapter/真实入口验证；不支持的来源模式写明真实代码证据与排除理由。（证据：`docs/guides/agent-service.md` §5–§6 的能力映射与 §10 排除项；rv-1 的 Sandbox/A2A、Skill、资源/产物、Auto、child Run 断言）
+- [x] 完成 docs/ai-standards/testing.md 所选的 fmt/lint/Rust service/web/Compose 验证；未运行命令明确写 not run，不用低层测试代替真实入口。（证据：`just ci` exit 0；`just web-check`、`just web-admin-check`、`just web-tracing-check`、`just web-admin-test` 通过；生产 Compose 整栈 not run，见报告“本机环境与已知限制”）
+- [~] 运行 just prd check --structure-only tasks/pending/P1-FEAT-20261030-092543-agent-service-runtime.md；归档前运行 just prd check --archive-ready tasks/pending/P1-FEAT-20261030-092543-agent-service-runtime.md，Final Reconciliation 与横幅同步。 — runner-owned gate: runner archive-readiness check（structure-only 已由执行侧运行并通过；archive-ready 由 runner 在归档前执行）
 
 #### Delivery Readiness
 
-- [ ] 生产可用路径已按决议实现；必需微服务健康后可从 public 完成一次 Run 并从 admin/tracing 查到对应状态，无开放的安全或数据回滚阻塞项。
-- [ ] 所有验收证据含真实输出来源、跨越的边界、fresh-state 观察和最终代码树标识；实现改动或矛盾观察出现后重跑受影响证据。
-- [ ] 如使用 PR，PR 证据必须内嵌呈递 §9.1 的真实截图与结果；无 PR 时，完成消息逐项呈递 §9.1 的内容和截图。
-- [ ] 交付时将真实渲染截图以内嵌图片写入 §9.1 和 evidence report，并在完成消息/PR 中同步呈现；目标原型与实现截图使用相同状态、视口和数据。
+- [x] 生产可用路径已按决议实现；必需微服务健康后可从 public 完成一次 Run 并从 admin/tracing 查到对应状态，无开放的安全或数据回滚阻塞项。（证据：rv-1 在真实 accounts/agent/tracing/前端拓扑中完成 public Run 并从 admin/tracing 查询；生产 `docker-compose.yml` 整栈未在本机执行，见 §13 Requirements and risks）
+- [x] 所有验收证据含真实输出来源、跨越的边界、fresh-state 观察和最终代码树标识；实现改动或矛盾观察出现后重跑受影响证据。（证据：报告“代码树与证据文件”记录 HEAD `d615578a…`、工作树状态/diff sha256；rv-1～rv-6 均在 A2A 适配器修复后的最终代码树上以 fresh state 重跑）
+- [~] 如使用 PR，PR 证据必须内嵌呈递 §9.1 的真实截图与结果；无 PR 时，完成消息逐项呈递 §9.1 的内容和截图。 — runner-owned gate: runner PR publication（执行侧完成消息已按 §9.1 呈递）
+- [x] 交付时将真实渲染截图以内嵌图片写入 §9.1 和 evidence report，并在完成消息/PR 中同步呈现；目标原型与实现截图使用相同状态、视口和数据。（证据：§9.1 内嵌 rv-1 三张实现截图与三张同视口原型截图；evidence report 的 Human Review Navigation 同样内嵌；原型为设计意图、数据为示例值，已在两处标注）
 
 ## 10. Functional Requirements
 
@@ -575,6 +647,15 @@ Verifier-only 结果故意不放在人读区：rv-2 的授权/脱敏负控、rv-
 | D-06 | Session/Run 生命周期 | 幂等创建、配置快照、持久事件/SSE、协作式取消但不回滚已完成副作用 | 每次重试新建 Run 或把取消描述为事务回滚 | 调用方可判断同一 Run；通用工具副作用无法撤销 | 待用户确认 |
 | D-07 | Agent 服务边界 | 一个独立 Agent 微服务承载多个组织/Runtime/Agent，业务服务统一通过 HTTP 调用 | 在 tracing/accounts 服务运行或每个业务服务复制 Runtime | 用户已明确要求单一服务；独立部署可拥有 Agent 状态而不侵入现有服务 | 用户已确认 |
 
+### Final Reconciliation
+
+- Interpretation: §1 行为样例与解读保持不变；rv-1～rv-6 按表中行为真实执行，未发现需要修订的解读或范围。
+- Public behavior and contracts: public/admin HTTP 路径、错误码、Session/Run 语义与 tracing producer 契约由 services/agent/openapi.yaml、docs/guides/agent-service.md 和 public/admin 手写客户端一致描述；rv-1/rv-2/rv-4/rv-5 已通过真实入口核对。独立业务服务示例只经 Agent HTTP 契约调用，响应字段与手写类型一致。
+- Related PRD status: agent-tracing pending PRD 保持独立，本 PRD 未修改其代码或契约；accounts 仅通过公共 /auth/me 与 /admin/auth/me 使用，未依赖私有 crate 或共享数据库。
+- Requirements and risks: FR-1 至 FR-8 已按决议实现；rv-4 边界验证发现并修复了 public 上传上限与 413 错误码两处真实缺陷；rv-6 发现并修复了 A2A adapter 将携带 `taskId` 的直接 Message 误当 Task 轮询的互操作缺陷（`services/agent/crates/engines/src/a2a.rs`，新增单元测试与文档说明）。真实 Runtime 验证使用本机独立部署的官方 `a2a-sdk==1.3.0` 参考实现，不是第三方厂商生产端点，不能据此宣称生产可用性；生产 `docker-compose.yml` 整栈未在本机执行。
+- Validation blocker: 无。原两项执行侧验证已补齐（rv-6 真实 Runtime、rv-5 独立业务示例）。
+- Validation follow-up: 无强制后续；如后续具备第三方生产 Runtime 凭据，可复用 `AGENT_E2E_REAL_RUNTIME=1` 与 `rv-6-real-runtime.sh` 的包装方式追加生产端点验证，并由人工验收跟踪。
+
 ## 14. Change Log
 
 ### 2026-10-30 · Initial draft
@@ -585,3 +666,48 @@ Verifier-only 结果故意不放在人读区：rv-2 的授权/脱敏负控、rv-
 - 原因：用户明确要求将 ../ai-assistant 的 Runtime 和 Agent 能力迁移到一个独立微服务，并用已有 tracing 服务记录数据流。
 - 影响：定义 Agent 服务边界、接口使用方式、运行/观测语义及待确认范围。
 - 审核：初稿待用户审阅 Part A §1–2；所有人工确认项保持未勾选。
+
+### 2026-11-04 · Deliverable evidence
+
+- 类型：证据呈递
+- 原文：§9.1 仅列出截图路径，未内嵌真实画面。
+- 变更后：在 §9.1 内嵌 rv-1 真实运行的三张本机验证截图，并注明 GitHub 上不显示；验收清单与工作范围未变。
+- 原因：交付要求将真实截图内嵌到 §9.1 与 evidence report。
+- 影响：仅人读呈递；所有 Human-Confirmed 项仍待用户本人勾选。
+- 审核：执行侧复核；Human-Confirmed 项待用户审阅，未代勾。
+
+### 2026-11-04 · Acceptance reconciliation
+
+- 类型：验收收口
+- 原文：§9 执行侧项全部未勾选，横幅为“未开工”，缺少 Final Reconciliation，Change Log 第 2 条缺少审核字段，§9.1 未配对目标原型与实现截图。
+- 变更后：按证据勾选 rv-1/rv-2/rv-3 覆盖的执行侧项，runner-owned gate 改为 `[~]`；保留 3 项未完成执行侧项为 `[ ]` 并记录 Validation blocker / Validation follow-up；横幅改为“验证阻塞”；补充 Final Reconciliation；在 §9.1 与 evidence report 内嵌同视口原型与实现截图配对。
+- 原因：runner 交付门禁要求 Change Log 六字段完整，且清单、横幅与最终证据一致。
+- 影响：仅验收记录、状态与呈递；不改变实现、范围或任何 Human-Confirmed 项。
+- 审核：执行侧自检；Human-Confirmed 仍待用户本人确认，未代勾。
+
+### 2026-11-04 · Boundary probe and upload limit fix
+
+- 类型：边界修复与验收
+- 原文：R3 边界验证项保持未完成，报告称尚无真实入口超限 observation；public 资源上传路由沿用 256 KiB 全局上限，框架层 413 返回纯文本而非 `payload_too_large`。
+- 变更后：新增 rv-4 边界场景并纳入 evidence.json（21/21 项通过）；在 `services/agent/crates/api/src/server.rs` 统一 413 JSON 错误契约，在 `routes/public.rs` 为资源上传路由恢复 10 MiB + multipart 开销上限；勾选 R3 边界项，未完成执行侧项降至 2 项（真实部署 Runtime、独立业务微服务样例），横幅与 Final Reconciliation 同步。
+- 原因：真实入口边界探测暴露了与 `docs/guides/agent-service.md` 契约不一致的两处缺陷，按验收要求修复并用真实入口复验。
+- 影响：影响 public 资源上传上限与所有 413 响应体；新增 rv-4 证据项；Human-Confirmed 项仍未勾选。
+- 审核：执行侧自检；Human-Confirmed 仍待用户本人确认，未代勾。
+
+### 2026-11-04 · Real runtime, business sample and A2A interop
+
+- 类型：实现补齐与验收
+- 原文：§9 仍保留 2 项未完成执行侧验证（真实部署 Runtime、独立业务微服务样例），横幅为“验证阻塞”；A2A adapter 尚未验证与官方 SDK 的互操作。
+- 变更后：新增 `examples/agent-business-service` 独立业务微服务示例（只配置 `AGENT_BASE_URL`/`AGENT_SERVICE_TOKEN`，只经 Agent HTTP 契约创建/查询/取消 Run，无 Agent 数据库配置），新增 `business-service-sample` 端到端场景并由 rv-5 记录 22/22；新增 `rv-6-real-runtime.sh`，用 `uv` + Python 3.12 独立部署官方 `a2a-sdk==1.3.0` 参考 Runtime 并运行真实全链路，66/66 通过；修复 A2A adapter 把携带 `taskId` 的直接 Message 误当 Task 轮询的互操作缺陷（`services/agent/crates/engines/src/a2a.rs`，新增完成计划与单元测试），同步 `docs/guides/agent-service.md` §5/§5.1；勾选上述 2 项执行侧验证，横幅改为“待人工验收”，Final Reconciliation 清除 validation blocker；rv-1～rv-6 均在修复后的最终代码树上重跑并更新 evidence.json 与 evidence report。
+- 原因：runner 交付门禁要求完成缺失的真实工作与证据；真实 Runtime smoke 暴露了 adapter 互操作缺陷，必须修复并复验。
+- 影响：新增示例 crate 与 e2e 场景/证据；Agent A2A adapter 行为变化（直接 Message 优先完成，不轮询）；真实 Runtime 证据使用本机部署的开源参考实现，不代表第三方生产可用性；Human-Confirmed 项仍未勾选。
+- 审核：执行侧自检；Human-Confirmed 仍待用户本人确认，未代勾。
+
+### 2026-11-04 · Validation oracle plan sync
+
+- 类型：验收计划对齐
+- 原文：Issue 的 Realistic Validation 清单只有 rv-1/rv-2/rv-3 三项，但 `evidence.json` 按 6 个场景列出 item 1～6；交付门禁以 Issue 清单条目数为期望集合，因此把 item 4/5/6 判为 unexpected item number。同时 §7.6 没有 rv-4（真实入口边界）、rv-5（独立业务服务契约）、rv-6（独立部署 Runtime）这三个补充 oracle 的定义。
+- 变更后：`evidence.json` 收敛为与 Issue 清单一一对应的 3 个 item，分别引用 rv-1/rv-2/rv-3 证据文件并重跑 `kc evidence check`（3/3）；rv-4/rv-5/rv-6 的输出保留在证据目录，作为 PRD 补充 oracle 记录在 evidence report，不再作为 manifest item；在 §7.3 风险登记表补充边界与业务服务两行并把 rv-4/rv-5/rv-6 关联到相应风险；在 §7.6 按既有字段结构补齐 rv-4/rv-5/rv-6 的 behavior、real_entry、expected、mock_boundary、tier、test_layer、critical_value_source、must_cross、forbidden_bypasses、fresh_state_probe、final_tree_evidence、negative_control 与 expected_fail；更新 Human-decision oracle map；明确独立部署的官方 SDK 参考实现可作为实际配置 Runtime 的运行记录，但必须记录实现/版本/来源/非生产属性。
+- 原因：证据 manifest 的 `item_number` 必须严格等于 Issue Realistic Validation 清单的条目编号集合（3 项）；补充验证可以继续执行和留存，但必须与门禁清单分离，不能放宽或伪造任何条目。补齐 §7.6 定义使补充 oracle 有可审阅的计划与负控记录。
+- 影响：仅调整证据 manifest 结构与补充验证计划，不改变实现、验收结论或 Human-Confirmed 项；rv-4/rv-5/rv-6 仍按原限制（本地 fixture 的故障语义、非生产 Runtime、单实例并发观察）呈递。
+- 审核：执行侧自检；Human-Confirmed 仍待用户本人确认，未代勾。

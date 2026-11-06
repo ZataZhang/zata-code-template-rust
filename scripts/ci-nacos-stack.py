@@ -52,6 +52,10 @@ class CiFixture:
 class TestSecrets:
     postgres_password: str
     agent_tracing_password: str
+    agent_db_password: str
+    agent_web_token: str
+    agent_admin_token: str
+    agent_producer_token: str
     redis_password: str
     admin_password: str
     nacos_token: str
@@ -215,12 +219,27 @@ def write_locator(file_path: Path, location: NacosLocation) -> None:
 
 
 def properties_content(secrets_bundle: TestSecrets) -> str:
+    producer_credentials = json.dumps(
+        [
+            {
+                "source_id": "agent",
+                "project_id": "agent",
+                "token": secrets_bundle.agent_producer_token,
+            }
+        ],
+        separators=(",", ":"),
+    )
     return "\n".join(
         (
             "# isolated CI values",
             f"POSTGRES_PASSWORD={secrets_bundle.postgres_password}",
             f"AGENT_TRACING_DB_PASSWORD={secrets_bundle.agent_tracing_password}",
-            "AGENT_TRACING_PRODUCERS_JSON=[]",
+            f"AGENT_DB_PASSWORD={secrets_bundle.agent_db_password}",
+            f"AGENT_WEB_SERVICE_TOKEN={secrets_bundle.agent_web_token}",
+            f"AGENT_ADMIN_SERVICE_TOKEN={secrets_bundle.agent_admin_token}",
+            f"AGENT_TRACING_PRODUCER_TOKEN={secrets_bundle.agent_producer_token}",
+            f"AGENT_TRACING_PRODUCERS_JSON={producer_credentials}",
+            "AGENT_PLATFORM_ADMIN_IDS=[1]",
             f"REDIS_PASSWORD={secrets_bundle.redis_password}",
             "ADMIN_BOOTSTRAP_USERNAME=ci-admin",
             f"ADMIN_BOOTSTRAP_PASSWORD={secrets_bundle.admin_password}",
@@ -322,6 +341,18 @@ def verify_container_configuration(fixture: CiFixture, secrets_bundle: TestSecre
     accounts_environment = env_map(
         find_service_container(fixture.project_name, "accounts")
     )
+    agent_environment = env_map(
+        find_service_container(fixture.project_name, "agent-service")
+    )
+    web_environment = env_map(find_service_container(fixture.project_name, "web"))
+    admin_environment = env_map(find_service_container(fixture.project_name, "admin"))
+    expected_agent_tokens = json.dumps(
+        [
+            {"service_id": "web", "token": secrets_bundle.agent_web_token},
+            {"service_id": "admin", "token": secrets_bundle.agent_admin_token},
+        ],
+        separators=(",", ":"),
+    )
 
     matches = (
         postgres_environment.get("POSTGRES_PASSWORD")
@@ -335,19 +366,33 @@ def verify_container_configuration(fixture: CiFixture, secrets_bundle: TestSecre
         == f"postgres://app:{secrets_bundle.postgres_password}@postgres:5432/app"
         and accounts_environment.get("REDIS_URL")
         == f"redis://:{secrets_bundle.redis_password}@redis:6379/0"
+        and agent_environment.get("DATABASE_URL")
+        == f"postgres://agent:{secrets_bundle.agent_db_password}@agent-postgres:5432/agent"
+        and agent_environment.get("AGENT_SERVICE_TOKENS_JSON")
+        == expected_agent_tokens
+        and agent_environment.get("AGENT_TRACING_PRODUCER_TOKEN")
+        == secrets_bundle.agent_producer_token
+        and agent_environment.get("APP_AGENT__PLATFORM_ADMIN_IDS") == "[1]"
+        and web_environment.get("AGENT_SERVICE_TOKEN")
+        == secrets_bundle.agent_web_token
+        and admin_environment.get("AGENT_SERVICE_TOKEN")
+        == secrets_bundle.agent_admin_token
         and not any(
             key.startswith("NACOS_")
             for service_environment in (
                 postgres_environment,
                 redis_environment,
                 accounts_environment,
+                agent_environment,
+                web_environment,
+                admin_environment,
             )
             for key in service_environment
         )
     )
     if not matches:
         raise RuntimeError("容器环境与 Nacos 值不一致或 Nacos 引导参数泄漏")
-    print("PASS  Nacos 值原样到达 PostgreSQL、Redis 与 accounts 容器；NACOS_* 未传入容器")
+    print("PASS  Nacos 值原样到达 PostgreSQL、Redis、accounts、Agent 与前端容器；NACOS_* 未传入容器")
 
 
 def http_status(url: str) -> int:
@@ -443,6 +488,10 @@ def cleanup(
     cleanup_environment = environment.copy()
     cleanup_environment["POSTGRES_PASSWORD"] = secrets_bundle.postgres_password
     cleanup_environment["AGENT_TRACING_DB_PASSWORD"] = secrets_bundle.agent_tracing_password
+    cleanup_environment["AGENT_DB_PASSWORD"] = secrets_bundle.agent_db_password
+    cleanup_environment["AGENT_WEB_SERVICE_TOKEN"] = secrets_bundle.agent_web_token
+    cleanup_environment["AGENT_ADMIN_SERVICE_TOKEN"] = secrets_bundle.agent_admin_token
+    cleanup_environment["AGENT_TRACING_PRODUCER_TOKEN"] = secrets_bundle.agent_producer_token
     cleanup_environment["REDIS_PASSWORD"] = secrets_bundle.redis_password
     subprocess.run(
         [
@@ -501,6 +550,10 @@ def main() -> int:
     secrets_bundle = TestSecrets(
         postgres_password=f"pg-{secrets.token_hex(16)}",
         agent_tracing_password=f"trace-{secrets.token_hex(16)}",
+        agent_db_password=f"agent-{secrets.token_hex(16)}",
+        agent_web_token=f"web-{secrets.token_hex(16)}",
+        agent_admin_token=f"admin-{secrets.token_hex(16)}",
+        agent_producer_token=f"producer-{secrets.token_hex(16)}",
         redis_password=f"redis-{secrets.token_hex(16)}",
         admin_password=SPECIAL_ADMIN_PASSWORD,
         nacos_token=base64.b64encode(secrets.token_bytes(32)).decode("ascii"),
@@ -665,6 +718,10 @@ def main() -> int:
             redacted_values = (
                 secrets_bundle.postgres_password,
                 secrets_bundle.agent_tracing_password,
+                secrets_bundle.agent_db_password,
+                secrets_bundle.agent_web_token,
+                secrets_bundle.agent_admin_token,
+                secrets_bundle.agent_producer_token,
                 secrets_bundle.redis_password,
                 secrets_bundle.admin_password,
                 secrets_bundle.nacos_token,
