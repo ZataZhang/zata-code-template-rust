@@ -16,7 +16,11 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     && cp target/release/agent-tracing-service /usr/local/bin/agent-tracing-service
 
 FROM debian:bookworm-slim
-RUN useradd --system --uid 10002 --no-create-home app
+# HTTP 客户端需要系统 CA 信任库验证 accounts 等 HTTPS 上游。
+RUN apt-get update \
+    && apt-get install --no-install-recommends --yes ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --system --uid 10002 --no-create-home app
 WORKDIR /app
 
 COPY --from=builder /usr/local/bin/agent-tracing-service /usr/local/bin/agent-tracing-service

@@ -25,7 +25,11 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     && cp target/release/agent-service /usr/local/bin/agent-service
 
 FROM debian:bookworm-slim
-RUN useradd --system --uid 10003 --no-create-home app
+# HTTP 客户端需要系统 CA 信任库验证 Nacos 与外部 Runtime 的 HTTPS 证书。
+RUN apt-get update \
+    && apt-get install --no-install-recommends --yes ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --system --uid 10003 --no-create-home app
 WORKDIR /app
 
 COPY --from=builder /usr/local/bin/agent-service /usr/local/bin/agent-service
