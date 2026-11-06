@@ -170,6 +170,20 @@ services:
       AGENT_SERVICE_TOKEN: ${AGENT_WEB_SERVICE_TOKEN}
     expose:
       - "3000"
+    healthcheck:
+      # stack-up --wait 必须等 Next.js 页面可用，避免 edge 在启动期间返回 502。
+      test:
+        - CMD
+        - node
+        - -e
+        - >-
+          fetch('http://127.0.0.1:3000/login')
+          .then((response) => process.exit(response.ok ? 0 : 1))
+          .catch(() => process.exit(1))
+      interval: 5s
+      timeout: 4s
+      retries: 12
+      start_period: 15s
     depends_on:
       accounts:
         condition: service_healthy

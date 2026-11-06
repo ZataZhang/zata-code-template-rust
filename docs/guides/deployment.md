@@ -132,7 +132,7 @@ nginx 会从受信任的代理请求里还原客户端地址，再覆盖写 `X-F
 | Agent tracing 后端 | `just tracing-docker-build` | tracing 独立 `APP_DATABASE__URL`、`APP_ACCOUNTS__ADMIN_AUTH_URL`、`APP_PRODUCER__CREDENTIALS_JSON`；监听 8090，以非 root 运行 |
 | Tracing Studio | `just web-tracing-docker-build` | `ACCOUNTS_UPSTREAM`、`TRACING_UPSTREAM`、`TRUSTED_PROXY_CIDR`；同时代理 producer 写入口 |
 
-单独运行镜像时由部署平台提供运行时变量。三个 Rust 后端镜像都包含系统 CA 信任库，供 Nacos、Agent Runtime 和 accounts 等 HTTPS 上游校验证书。Nacos Compose 读取器只管理本仓库 Compose 配置，不是账号服务镜像的一部分。容器镜像不带 `curl`；编排平台的探针直接请求 `/live`、`/ready`。
+单独运行镜像时由部署平台提供运行时变量。三个 Rust 后端镜像都包含系统 CA 信任库，供 Nacos、Agent Runtime 和 accounts 等 HTTPS 上游校验证书。完整 Compose 会通过 `/login` 检查 public Next.js 服务就绪，再让 `stack-up --wait` 返回。Nacos Compose 读取器只管理本仓库 Compose 配置，不是账号服务镜像的一部分。容器镜像不带 `curl`；编排平台的探针直接请求 `/live`、`/ready`。
 
 ## 6. 排错
 
