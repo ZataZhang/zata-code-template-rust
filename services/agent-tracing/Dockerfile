@@ -7,6 +7,7 @@ COPY Cargo.toml Cargo.lock ./
 COPY platform ./platform
 COPY services ./services
 COPY tools ./tools
+COPY examples ./examples
 COPY .sqlx ./.sqlx
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
