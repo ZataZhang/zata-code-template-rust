@@ -1,6 +1,6 @@
 ## 人审导航 / Human Review Navigation
 
-先看目标原型 [`docs/prototypes/agent-service-runtime.html`](../../../docs/prototypes/agent-service-runtime.html)（本机运行 `open "docs/prototypes/agent-service-runtime.html"`），再对照下面三张真实实现截图。三张图均为 **本机验证截图**（2026-11-04 由 A2A 适配器修复后的最终代码树重跑 rv-1 产生），文件位于 evidence 目录、不进入代码 diff；代码页可能不显示二进制图片，请按下方本机路径打开。
+先看目标原型 [`docs/prototypes/agent-service-runtime.html`](../../../docs/prototypes/agent-service-runtime.html)（本机运行 `open "docs/prototypes/agent-service-runtime.html"`），再对照下面三张真实实现截图。三张图均为 **本机验证截图**（2026-11-06 在 rebase 与 Blob 路径加固后的代码树重跑 rv-1 产生），文件位于 evidence 目录、不进入代码 diff；代码页可能不显示二进制图片，请按下方本机路径打开。
 
 | 呈递物 | 本机路径与打开命令 | 你应看到什么 | 实际画面 |
 |---|---|---|---|
@@ -22,7 +22,7 @@
 
 ## 真实验证执行记录
 
-执行日期：2026-11-04。Issue 的 Realistic Validation 清单包含 rv-1～rv-3 三项，`evidence.json` 的 item 1～3 与之一一对应；rv-4～rv-6 是 PRD §7.6 追加的补充 oracle（边界、业务微服务样例、独立部署 Runtime），在同一最终代码树上执行并把输出保存在本目录，但不作为 Issue 清单项写入 manifest（Issue 清单只有 3 项）。所有场景都通过真实入口运行：真实浏览器（Playwright/Chromium）→ public Next.js 站点 Route Handler → Agent HTTP API → accounts `/auth/me` 或 `/admin/auth/me` → Organization/ACL → Sandbox 或真实 A2A adapter → Agent PostgreSQL + outbox → tracing producer HTTP API → tracing PostgreSQL/query API。除 rv-6 使用独立部署的官方 `a2a-sdk==1.3.0` 参考 Runtime 外，其余场景的外部 A2A endpoint 由本地协议替身模拟（PRD 允许）；所有组件均未使用内存替身，也未直连数据库伪造结果。rv-1 到 rv-5 都是在 A2A 适配器互操作修复后的最终代码树上重跑的。
+执行日期：2026-11-06。当前 PR 验证代码提交为 `18f0d35d7371229d616ad49c80f9fbd0fef94cba`；该提交包含 rebase 后的 Agent 功能与 Blob 根目录/符号链接边界加固。Issue 的 Realistic Validation 清单包含 rv-1～rv-3 三项，`evidence.json` 的 item 1～3 与之一一对应；rv-4～rv-6 是 PRD §7.6 追加的补充 oracle（边界、业务微服务样例、独立部署 Runtime），在同一最终代码提交上执行并把输出保存在本目录，但不作为 Issue 清单项写入 manifest（Issue 清单只有 3 项）。所有场景都通过真实入口运行：真实浏览器（Playwright Chromium，经 `CHROME_PATH` 指定）→ public Next.js 站点 Route Handler → Agent HTTP API → accounts `/auth/me` 或 `/admin/auth/me` → Organization/ACL → Sandbox 或真实 A2A adapter → Agent PostgreSQL + outbox → tracing producer HTTP API → tracing PostgreSQL/query API。除 rv-6 使用独立部署的官方 `a2a-sdk==1.3.0` 参考 Runtime 外，其余场景的外部 A2A endpoint 由本地协议替身模拟（PRD 允许）；所有组件均未使用内存替身，也未直连数据库伪造结果。
 
 | 检查点 | 命令 | 结果 | 关键输出 |
 |---|---|---|---|
@@ -32,7 +32,7 @@
 | 补充 rv-4 请求体/集合/上传/超时/并发边界（PRD §7.6） | `bash tasks/evidence/P1-FEAT-20261030-092543-agent-service-runtime/scripts/rv-4-boundary-limits.sh` | 21/21 项通过 | 300 KiB JSON → 413 `payload_too_large`；100,001 字符正文 → 400；21 个 resource/skill 引用 → 400；10 MiB+1 上传 → 413，限额内上传 201；A2A 无响应在 ≥55s 后按 60s 超时写成 `failed`；5 个 SLOW Run 恰好 4 running/1 queued，取消后全部终态 |
 | 补充 rv-5 独立业务微服务示例（PRD §7.6） | `bash tasks/evidence/P1-FEAT-20261030-092543-agent-service-runtime/scripts/rv-5-business-service-sample.sh` | 22/22 项通过 | 示例经 Agent HTTP 契约创建 Run 201/`created=true`、幂等重放 200/`created=false` 同一 Run、查询与取消响应与直连逐字段一致；错误码 404 `run_not_found`、401 `unauthenticated`、400 `invalid_request` 透传；`cargo tree` 不含 `tpl-agent`/`sqlx`/`postgres`/`redis`，无 Agent 数据库配置 |
 | 补充 rv-6 独立部署官方 A2A SDK Runtime（PRD §7.6） | `bash tasks/evidence/P1-FEAT-20261030-092543-agent-service-runtime/scripts/rv-6-real-runtime.sh` | 66/66 项通过 | 以 `uv` + Python 3.12 启动 `a2a-sdk==1.3.0` 官方参考实现（Agent Card `Real A2A SDK Echo`、JSONRPC/1.0），登记为外部 Runtime 并探测 Ready；真实 Run（fresh-state ID 见证据文件）到达 `succeeded`，回复含独立实现产出的 `Real A2A SDK reply`；脚本 sha256 已记录 |
-| 交付门禁自检 | `kc evidence check --evidence tasks/evidence/P1-FEAT-20261030-092543-agent-service-runtime` | 3/3 PASSED | item 1 39.1s、item 2 24.4s、item 3 31.5s，均低于 300s 复跑上限；门禁重跑即当前证据文件来源（manifest 只含 Issue 清单的 3 项） |
+| 交付门禁自检 | `kc evidence check --evidence tasks/evidence/P1-FEAT-20261030-092543-agent-service-runtime` | 3/3 PASSED | item 1 40.3s、item 2 24.3s、item 3 31.1s，均低于 300s 复跑上限；门禁运行于最终代码提交（manifest 只含 Issue 清单的 3 项） |
 
 负控执行方式：
 
@@ -47,6 +47,7 @@
 
 - 配置键：`docs/guides/agent-service.md` §8 明确连接串、`AGENT_SERVICE_TOKENS_JSON`、`AGENT_TRACING_PRODUCER_TOKEN`、`AGENT_CREDENTIAL_<ALIAS>` 只从环境或部署平台注入；`config.toml` 与 `.env.example` 不保存真实秘密。
 - 代码审阅：`services/agent/crates/infrastructure/src/config.rs` 对 `DatabaseSettings`、`IdentitySettings`、`TracingSettings` 手写 `Debug`，连接串、服务 token 清单和 producer token 只显示“已配置，已隐藏”；Nacos 配置错误测试断言错误文本不回显粘贴的秘密。
+- Blob 存储审阅：`FilesystemBlobStore` 拒绝跨平台路径穿越，逐级解析配置根目录内的父目录；读写路径均拒绝越出根目录的符号链接，单元测试覆盖目录链接写入和文件链接读取/删除。
 - 运行断言：rv-2 的“Agent 日志不包含标记秘密、完整提示词或服务凭据”“标记秘密保存在 owner 可见的消息中，但不出现在 Run 事件投影”“tracing 查询到同一 Run 且响应不含标记秘密”均通过。
 - 限制：日志样本来自本机真实运行，不是生产环境日志审计；生产日志轮转、采集侧脱敏仍需部署后复核。
 
@@ -77,13 +78,14 @@
 - `TEST_AGENT_DATABASE_URL=postgres://agent:agentpass@localhost:5435/agent_dev cargo test -p tpl-agent --test http_end_to_end -- --ignored`：1 passed / 0 failed，新增的 300 KiB JSON → 413 `payload_too_large`、300 KiB 上传 → 201、1 MiB+1 上传 → 413 断言均执行并通过（本机测试库，不代替 rv-4 的真实入口证据）。
 - `cargo test -p agent-business-service`：9 passed / 0 failed（契约解析 4、上游错误映射 3、路径校验 2）；`cargo clippy -p agent-business-service --all-targets -- -D warnings` 通过。
 - `cargo test -p tpl-agent-engines`：25 passed / 0 failed，含新增的 `direct_message_completes_even_when_the_message_carries_a_task_id` 与 `non_terminal_task_requires_polling`；`cargo clippy -p tpl-agent-engines --all-targets -- -D warnings` 通过。
-- `just ci`：通过（exit 0）——`cargo fmt --all --check`、`cargo clippy --workspace --all-targets -- -D warnings`、`cargo test --workspace`、`cargo doc --workspace --no-deps` 均成功；42 个测试目标全部 `test result: ok`，298 passed / 0 failed。2026-11-04 最终运行（含 A2A 直接 Message 互操作修复、业务微服务示例与 rustfmt 后的代码树）。
+- `just ci`：2026-11-06 通过（exit 0）——`cargo fmt --all --check`、`cargo clippy --workspace --all-targets -- -D warnings`、`cargo test --workspace`、`cargo doc --workspace --no-deps` 均成功，包含 Blob 路径穿越与符号链接回归测试。
 
 ## 代码树与证据文件
 
-- 基线 HEAD：`d615578a18bb5b2d4ba482d467086cf3dc71cd28`
-- 交付前工作树指纹（2026-11-04，manifest 收敛为 Issue 3 项并重跑 `kc evidence check` 后重取）：`git status --porcelain` 59 项，其 sha256 为 `454e47c71906fa94c86d8ad350a1a1b5d2446aadee6eb9a77b42988167cfc663`；已跟踪文件 `git diff` sha256 为 `038fecc2b22f1ef4878d699988b39c8b45f650ffdb42042b3320717a6b6bd942`（未跟踪新文件不含在 diff 摘要内，以 runner 最终提交的 tree 为准）。
-- `just ci` 在同一工作树上 exit 0；见上节。
+- PR 验证提交：`18f0d35d7371229d616ad49c80f9fbd0fef94cba`；tree：`6f0d624ffb3262cd8a83dd0cc152bbe16c9afa2e`。RV-1～RV-6 与 `kc evidence check` 均在该提交代码上完成；其后只更新本证据报告。
+- PR 基线 `origin/main`：`5851023c`；分支另包含 `01ddeb4`（修正仓库 Runner 对安全 `.env.example` 的误拦截），该修复与 Issue #1 的提交门禁阻塞直接相关。
+- 原始实现基线：`d615578a18bb5b2d4ba482d467086cf3dc71cd28`。2026-11-04 的未提交工作树指纹为历史证据，已由上面的最终提交验证取代。
+- `just ci` 在最终代码提交上 exit 0；见上节。
 - 结构化 manifest：[`evidence.json`](evidence.json)；manifest 只覆盖 Issue Realistic Validation 清单的 3 项：
 
 | Manifest Item | 对应 Issue 条目 | 证据文件 |
