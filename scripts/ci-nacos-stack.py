@@ -752,14 +752,46 @@ def main() -> int:
                         include_failure_output=True,
                     ),
                 )
-            run_checked(
-                ["just", "stack-up"],
-                environment=environment,
-                options=RunOptions(
-                    redacted_values=redacted_values,
-                    include_failure_output=True,
-                ),
-            )
+            try:
+                run_checked(
+                    ["just", "stack-up"],
+                    environment=environment,
+                    options=RunOptions(
+                        redacted_values=redacted_values,
+                        include_failure_output=True,
+                    ),
+                )
+            except RuntimeError as stack_up_error:
+                compose_logs = subprocess.run(
+                    [
+                        "./scripts/compose-config.sh",
+                        "compose",
+                        "full",
+                        "logs",
+                        "--no-color",
+                        "--tail=100",
+                        "agent-tracing",
+                    ],
+                    cwd=ROOT,
+                    env=environment,
+                    check=False,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )
+                compose_log_tail = "\n".join(
+                    (compose_logs.stdout + compose_logs.stderr)
+                    .replace("\r", "\n")
+                    .splitlines()[-100:]
+                )
+                for secret_value in redacted_values:
+                    if secret_value:
+                        compose_log_tail = compose_log_tail.replace(
+                            secret_value, "<redacted>"
+                        )
+                raise RuntimeError(
+                    f"{stack_up_error}\nagent-tracing startup logs:\n{compose_log_tail}"
+                ) from stack_up_error
             verify_container_configuration(fixture, secrets_bundle)
             run_checked(
                 ["just", "stack-smoke"],
