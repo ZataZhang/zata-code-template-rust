@@ -122,6 +122,82 @@ def run_checked(
     return completed.stdout.strip()
 
 
+def capture_diagnostic_output(
+    command_arguments: list[str],
+    environment: dict[str, str],
+    redacted_values: tuple[str, ...],
+) -> tuple[int, str]:
+    """运行诊断命令并返回脱敏后的末尾输出。"""
+    completed = subprocess.run(
+        command_arguments,
+        cwd=ROOT,
+        env=environment,
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    output_tail = "\n".join(
+        (completed.stdout + completed.stderr)
+        .replace("\r", "\n")
+        .splitlines()[-100:]
+    )
+    for secret_value in redacted_values:
+        if secret_value:
+            output_tail = output_tail.replace(secret_value, "<redacted>")
+    return completed.returncode, output_tail
+
+
+def compose_startup_diagnostics(
+    environment: dict[str, str], redacted_values: tuple[str, ...]
+) -> str:
+    """收集 Compose 启动失败前可见的服务状态、日志和 web 探针结果。"""
+    compose_arguments = ["./scripts/compose-config.sh", "compose", "full"]
+    diagnostic_commands = [
+        ("Compose 服务状态", [*compose_arguments, "ps", "--all"]),
+        (
+            "web 启动日志",
+            [*compose_arguments, "logs", "--no-color", "--tail=100", "web"],
+        ),
+        (
+            "agent-tracing 启动日志",
+            [
+                *compose_arguments,
+                "logs",
+                "--no-color",
+                "--tail=100",
+                "agent-tracing",
+            ],
+        ),
+    ]
+    diagnostic_sections: list[str] = []
+    for section_title, command_arguments in diagnostic_commands:
+        _, section_output = capture_diagnostic_output(
+            command_arguments, environment, redacted_values
+        )
+        diagnostic_sections.append(f"{section_title}:\n{section_output}")
+
+    container_id_command = [*compose_arguments, "ps", "--quiet", "web"]
+    container_id_status, container_id_output = capture_diagnostic_output(
+        container_id_command, environment, redacted_values
+    )
+    web_container_id = container_id_output.splitlines()
+    if container_id_status == 0 and web_container_id:
+        healthcheck_arguments = [
+            "docker",
+            "inspect",
+            "--format",
+            "{{json .State.Health}}",
+            web_container_id[0],
+        ]
+        _, healthcheck_output = capture_diagnostic_output(
+            healthcheck_arguments, environment, redacted_values
+        )
+        diagnostic_sections.append(f"web 健康检查结果:\n{healthcheck_output}")
+
+    return "\n".join(diagnostic_sections)
+
+
 def nacos_url(location: NacosLocation, endpoint: str) -> str:
     return f"{location.server_url.rstrip('/')}/nacos/{endpoint}"
 
@@ -762,35 +838,10 @@ def main() -> int:
                     ),
                 )
             except RuntimeError as stack_up_error:
-                compose_logs = subprocess.run(
-                    [
-                        "./scripts/compose-config.sh",
-                        "compose",
-                        "full",
-                        "logs",
-                        "--no-color",
-                        "--tail=100",
-                        "agent-tracing",
-                    ],
-                    cwd=ROOT,
-                    env=environment,
-                    check=False,
-                    text=True,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                )
-                compose_log_tail = "\n".join(
-                    (compose_logs.stdout + compose_logs.stderr)
-                    .replace("\r", "\n")
-                    .splitlines()[-100:]
-                )
-                for secret_value in redacted_values:
-                    if secret_value:
-                        compose_log_tail = compose_log_tail.replace(
-                            secret_value, "<redacted>"
-                        )
                 raise RuntimeError(
-                    f"{stack_up_error}\nagent-tracing startup logs:\n{compose_log_tail}"
+                    f"{stack_up_error}\n"
+                    f"Compose startup diagnostics:\n"
+                    f"{compose_startup_diagnostics(environment, redacted_values)}"
                 ) from stack_up_error
             verify_container_configuration(fixture, secrets_bundle)
             run_checked(

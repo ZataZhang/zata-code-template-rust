@@ -245,7 +245,7 @@ agent-e2e *args:
 
 # 从 Nacos 加载部署配置并构建、启动整套服务；不会生成本地部署环境文件
 stack-up:
-    ./scripts/compose-config.sh compose full up -d --build --wait
+    ./scripts/compose-config.sh compose full up -d --build --wait --wait-timeout 120
 
 # 停止整套服务（保留数据）
 stack-down:
