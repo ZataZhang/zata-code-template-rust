@@ -524,10 +524,19 @@ Reviewer: human evidence is limited to the service scope and API contract. Revie
 - Related PRD status: 无上游 PRD 依赖；Agent 服务文档仅作架构参考，未修改其代码或契约。
 - Requirements and risks: 凭据写入后不可读、endpoint 在写入与消费两条路径都重新校验、HTTPS 地址矩阵与失败隔离均有真实入口证据；`RUST_LOG=debug` 下日志仍不含凭据、工具参数与结果。已知限制：MCP 数据卷不包含在默认三库备份命令中，需按 `docs/guides/deployment.md` 单独备份；真实部署仍需运维在 Nacos 中提供 MCP 三项秘密。
 - Validation blocker: 无。所有执行侧验证均已在本机真实入口完成。
-- Validation follow-up: 3 项 Human-Confirmed 待人工验收；独立 verifier 结论由 runner 在归档门禁中给出。
+- Validation follow-up: 3 项 Human-Confirmed 待人工验收；第 3 轮 verifier 已通过其核验 head，修复提交后的当前 PR head 仍需独立复核。
 - Acceptance Status Banner: 🧍 待人工验收。
 
 ## 14. Change Log
+
+### 2026-11-09 · 最终 head 响应限制与认证错误复核修复
+
+- 类型：实现、测试与配置文档修正
+- 原文：自定义 reqwest transport 替代 rmcp 默认客户端后，16 MiB 默认上限不再由 rmcp 自动兜底；配置可能将单页 JSON 响应放宽到更大值。另有 401/403 JSON-RPC error body 可能被解析成普通 MCP 响应。
+- 变更后：在自定义客户端入口把单页 JSON 上限钳制到 16 MiB，并在 serde 解析前实施配置上限；401/403 JSON-RPC error body 继续作为 HTTP 认证错误处理，错误文本不包含远端响应体；成功的空通知响应按 rmcp 语义接受。同步更新配置注释与服务指南，增加上限钳制和 401 行为回归测试。
+- 原因：自定义 transport 必须自行保持 rmcp 默认安全上限和 HTTP 状态语义，避免单页内存限制被配置绕过或认证失败被误报为 MCP 成功响应。
+- 影响：仅远端 MCP 客户端的响应解析、认证错误映射、配置与指南；管理 API、MCP 工具契约与数据模型不变。
+- 审核：`just test`、`just test real`、`just ci`、rv-1/rv-2/rv-3 与 `just mcp-docker-build` 均在最终源码改动后通过；Kc evidence check 将在提交后绑定最终 PR head 重跑。新增上限与 401 回归测试。
 
 ### 2026-11-09 · verifier 复审修复（时间戳契约、地址策略证据、失败隔离 e2e、debug 日志）
 

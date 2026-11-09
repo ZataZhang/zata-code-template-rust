@@ -17,6 +17,8 @@ use rmcp::transport::streamable_http_client::{
 use sse_stream::{Sse, SseStream};
 
 const MAX_ERROR_RESPONSE_BYTES: usize = 64 * 1024;
+/// 保留 rmcp 默认 reqwest transport 的单个 JSON 响应硬上限。
+const MAX_JSON_RESPONSE_HARD_LIMIT_BYTES: usize = 16 * 1024 * 1024;
 const MAX_RETRY_AFTER_BYTES: usize = 128;
 const SESSION_ID_HEADER: &str = "mcp-session-id";
 const LAST_EVENT_ID_HEADER: &str = "last-event-id";
@@ -32,7 +34,8 @@ impl BoundedReqwestClient {
     pub(crate) fn new(http_client: reqwest::Client, max_json_response_bytes: usize) -> Self {
         Self {
             http_client,
-            max_json_response_bytes,
+            max_json_response_bytes: max_json_response_bytes
+                .min(MAX_JSON_RESPONSE_HARD_LIMIT_BYTES),
         }
     }
 
@@ -136,8 +139,13 @@ impl BoundedReqwestClient {
                     return Err(error);
                 }
             };
-            if let Ok(ServerJsonRpcMessage::Error(error)) =
-                serde_json::from_slice::<ServerJsonRpcMessage>(&response_body)
+            let is_auth_failure = matches!(
+                response_status,
+                reqwest::StatusCode::UNAUTHORIZED | reqwest::StatusCode::FORBIDDEN
+            );
+            if !is_auth_failure
+                && let Ok(ServerJsonRpcMessage::Error(error)) =
+                    serde_json::from_slice::<ServerJsonRpcMessage>(&response_body)
             {
                 return Ok(StreamableHttpPostResponse::Json(
                     ServerJsonRpcMessage::Error(error),
@@ -151,6 +159,13 @@ impl BoundedReqwestClient {
                         format!("HTTP {response_status}").into(),
                     )
                 }));
+        }
+
+        if response_status.is_success()
+            && response.content_length() == Some(0)
+            && !matches!(&post_request.message, ClientJsonRpcMessage::Request(_))
+        {
+            return Ok(StreamableHttpPostResponse::Accepted);
         }
 
         match content_type.as_deref() {

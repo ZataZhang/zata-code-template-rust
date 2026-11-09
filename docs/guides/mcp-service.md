@@ -131,7 +131,7 @@ OpenAPI 文件：[`services/mcp/openapi.yaml`](../../services/mcp/openapi.yaml)�
 - API 响应只返回 `credential_configured`；日志、错误和 `Debug` 输出都不包含凭据明文。
 - 出站默认只允许 HTTPS，并拒绝 loopback、私网、链路本地、组播、保留地址与云元数据地址；DNS 解析后固定地址，避免重绑定。
 - 不跟随重定向；连接超时默认 5 秒，请求总超时默认 15 秒，SSE 事件、非流式 JSON HTTP 响应、分页工具定义累计与编码后工具结果上限默认 1 MiB，单连接最多暴露 256 个工具。
-- SSE 事件与非流式 JSON HTTP 响应都在解析前受 `outbound.max_response_bytes` 限制；`tools/list` 逐页累计工具定义的编码大小，达到配置上限后立即拒绝并停止请求后续分页；`tools/call` 在结果重新编码后检查。rmcp 另有固定 16 MiB JSON 硬上限，配置大于该值时仍由它兜底。
+- SSE 事件与非流式 JSON HTTP 响应都在解析前受 `outbound.max_response_bytes` 限制；`tools/list` 逐页累计工具定义的编码大小，达到配置上限后立即拒绝并停止请求后续分页；`tools/call` 在结果重新编码后检查。单页 JSON 上限最高为 16 MiB，即使配置更大也不会提高该硬上限。
 - IPv6 `2001::/23` 按 [IANA 特殊用途登记表](https://www.iana.org/assignments/iana-ipv6-special-registry)默认拒绝，仅放行明确全球可达的子分配；`2001:2::/48` benchmarking 地址在注册和每次使用时均拒绝。
 - `tools/list` 最多并发查询 8 个连接，完成后统一按工具名排序。单连接失败只跳过该连接；没有额外的列表整体截止时间，超过 8 个连接仍按空出的并发槽继续处理。
 - 日志固定把 `rmcp` 目标压回 `info`：即使设置 `RUST_LOG=debug`，也不会输出完整的 JSON-RPC 工具参数或工具结果。
@@ -157,7 +157,7 @@ OpenAPI 文件：[`services/mcp/openapi.yaml`](../../services/mcp/openapi.yaml)�
 | `security.context_max_age_secs` / `context_clock_skew_secs` | `300` / `30` | 上下文有效期上限与时钟偏差 |
 | `security.allow_insecure_loopback` | `false` | 仅本地测试远端 loopback HTTP server |
 | `outbound.connect_timeout_ms` / `request_timeout_ms` | `5000` / `15000` | 远端连接与请求超时 |
-| `outbound.max_response_bytes` / `max_tools_per_connection` | `1048576` / `256` | SSE 事件与 JSON HTTP 体解析前上限、分页工具定义累计与 JSON 结果编码后上限，以及工具数量上限；JSON 另有 rmcp 固定 16 MiB 硬上限 |
+| `outbound.max_response_bytes` / `max_tools_per_connection` | `1048576` / `256` | SSE 事件与 JSON HTTP 体解析前上限、分页工具定义累计与 JSON 结果编码后上限，以及工具数量上限；单页 JSON 上限最高 16 MiB |
 | `gateway.allowed_hosts` | `["localhost","127.0.0.1","::1"]` | MCP endpoint 的 Host 允许列表；空列表表示关闭校验 |
 | `gateway.max_request_body_bytes` | `1048576` | MCP 请求体上限 |
 

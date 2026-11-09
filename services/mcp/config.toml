@@ -35,7 +35,7 @@ allow_insecure_loopback = false
 connect_timeout_ms = 5000
 request_timeout_ms = 15000
 # SSE 事件、JSON HTTP 响应、工具发现累计定义与工具结果编码后限制。
-# JSON HTTP 响应在反序列化前受此限制；rmcp 另有固定 16 MiB 硬上限。
+# JSON HTTP 响应在反序列化前受此限制；单页 JSON 上限最高为 16 MiB。
 max_response_bytes = 1048576 # 1 MiB（最小有效值 1024）
 max_tools_per_connection = 256
 
