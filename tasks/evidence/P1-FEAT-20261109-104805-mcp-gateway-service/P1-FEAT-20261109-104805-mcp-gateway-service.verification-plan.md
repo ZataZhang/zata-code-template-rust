@@ -1,6 +1,6 @@
 # MCP Gateway 服务验证计划
 
-- PRD：`tasks/pending/P1-FEAT-20261109-104805-mcp-gateway-service.md`
+- PRD：`tasks/archive/P1-FEAT-20261109-104805-mcp-gateway-service.md`（由 runner 归档）
 - Issue：https://github.com/ZataZhang/zata-code-template-rust/issues/4
 - 执行日期：2026-11-09
 - 证据目录：`tasks/evidence/P1-FEAT-20261109-104805-mcp-gateway-service/`
@@ -11,7 +11,7 @@
 
 | RV | 行为 | 真实入口 | 证据文件 |
 |---|---|---|---|
-| rv-1 | 获准用户只看到并调用授权工具；未授权用户与其他租户被拒绝 | `just mcp-e2e --scenario authorization` | `rv-1-authorization.txt` |
+| rv-1 | 获准用户只看到并调用授权工具；未授权用户、其他租户与另一消费服务的同租户连接均被拒绝 | `just mcp-e2e --scenario authorization` | `rv-1-authorization.txt` |
 | rv-2 | 管理连接、加密凭据、出站安全、进程重启后真实 MCP 调用 | `just mcp-e2e --scenario remote-connection` | `rv-2-remote-connection.txt` |
 | rv-3 | 已发布契约覆盖连接管理与网关，且明确不含市场/消费方 UI | 阅读 `docs/guides/mcp-service.md` 与 `services/mcp/openapi.yaml` | `rv-3-docs-scope.txt` |
 
@@ -31,6 +31,7 @@
 4. 运行 `just mcp-docker-build`，再通过 `just mcp-up` 启动 Compose 栈并请求 `/ready`。
 5. 运行 `kc evidence check --evidence tasks/evidence/P1-FEAT-20261109-104805-mcp-gateway-service`，确认 manifest 3/3 通过。
 6. 在最终代码状态重跑 rv-1/rv-2/rv-3，并记录工作树指纹。
+7. pre-PR 复审修复后，在最终树重跑 rv-1/rv-2 负控（打红）、恢复断言、重捕证据，并重跑 `just ci`、`just test real` 与 `just mcp-docker-build`。
 
 ## 4. 负控设计
 

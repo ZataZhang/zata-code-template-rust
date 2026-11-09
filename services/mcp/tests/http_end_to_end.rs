@@ -48,6 +48,9 @@ use uuid::Uuid;
 const CONSUMER_ID: &str = "consumer-e2e";
 const SERVICE_TOKEN: &str = "e2e-service-token-0123456789abcdef";
 const SIGNING_SECRET: &str = "e2e-signing-secret-0123456789abcdef";
+const OTHER_CONSUMER_ID: &str = "consumer-e2e-other";
+const OTHER_SERVICE_TOKEN: &str = "e2e-other-service-token-0123456789abcdef";
+const OTHER_SIGNING_SECRET: &str = "e2e-other-signing-secret-0123456789abcdef";
 /// Base64 编码的 32 字节测试主密钥（`0123456789abcdef` 重复两次）。
 const CREDENTIAL_KEY_BASE64: &str = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=";
 const UPSTREAM_TOOL: &str = "lookup_weather";
@@ -58,47 +61,82 @@ fn database_url() -> String {
 }
 
 fn consumers_json() -> String {
-    json!([{
-        "consumer_id": CONSUMER_ID,
-        "token": SERVICE_TOKEN,
-        "context_signing_secret": SIGNING_SECRET,
-    }])
+    json!([
+        {
+            "consumer_id": CONSUMER_ID,
+            "token": SERVICE_TOKEN,
+            "context_signing_secret": SIGNING_SECRET,
+        },
+        {
+            "consumer_id": OTHER_CONSUMER_ID,
+            "token": OTHER_SERVICE_TOKEN,
+            "context_signing_secret": OTHER_SIGNING_SECRET,
+        }
+    ])
     .to_string()
 }
 
 #[derive(Clone)]
 struct Caller {
     context: String,
+    service_token: &'static str,
+}
+
+struct CallerIdentity<'a> {
+    consumer_id: &'a str,
+    tenant_id: &'a str,
+    subject_id: &'a str,
+    groups: &'a [&'a str],
+    role: &'a str,
 }
 
 impl Caller {
     fn new(tenant: &str, subject: &str, groups: &[&str], role: &str) -> Self {
+        Self::signed(
+            CallerIdentity {
+                consumer_id: CONSUMER_ID,
+                tenant_id: tenant,
+                subject_id: subject,
+                groups,
+                role,
+            },
+            SERVICE_TOKEN,
+            SIGNING_SECRET,
+        )
+    }
+
+    fn signed(
+        identity: CallerIdentity<'_>,
+        service_token: &'static str,
+        signing_secret: &str,
+    ) -> Self {
         let now = time::OffsetDateTime::now_utc().unix_timestamp();
         let claims = json!({
             "iss": "tpl-consumer-backend",
             "aud": "tpl-mcp-gateway",
-            "consumer_id": CONSUMER_ID,
-            "tenant_id": tenant,
-            "subject_id": subject,
-            "groups": groups,
-            "role": role,
+            "consumer_id": identity.consumer_id,
+            "tenant_id": identity.tenant_id,
+            "subject_id": identity.subject_id,
+            "groups": identity.groups,
+            "role": identity.role,
             "iat": now,
             "exp": now + 120,
         });
         let payload = serde_json::to_vec(&claims).expect("测试声明可序列化");
         let payload_segment = URL_SAFE_NO_PAD.encode(payload);
         let mut mac =
-            Hmac::<Sha256>::new_from_slice(SIGNING_SECRET.as_bytes()).expect("测试签名密钥有效");
+            Hmac::<Sha256>::new_from_slice(signing_secret.as_bytes()).expect("测试签名密钥有效");
         mac.update(payload_segment.as_bytes());
         let signature = URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes());
         Self {
             context: format!("{payload_segment}.{signature}"),
+            service_token,
         }
     }
 
     fn apply(&self, request: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
         request
-            .bearer_auth(SERVICE_TOKEN)
+            .bearer_auth(self.service_token)
             .header("x-user-context", &self.context)
     }
 }
@@ -109,6 +147,34 @@ fn admin(tenant: &str) -> Caller {
 
 fn user(tenant: &str, subject: &str, groups: &[&str]) -> Caller {
     Caller::new(tenant, subject, groups, "user")
+}
+
+fn other_consumer_admin(tenant: &str) -> Caller {
+    Caller::signed(
+        CallerIdentity {
+            consumer_id: OTHER_CONSUMER_ID,
+            tenant_id: tenant,
+            subject_id: "admin-1",
+            groups: &[],
+            role: "admin",
+        },
+        OTHER_SERVICE_TOKEN,
+        OTHER_SIGNING_SECRET,
+    )
+}
+
+fn other_consumer_user(tenant: &str, subject: &str) -> Caller {
+    Caller::signed(
+        CallerIdentity {
+            consumer_id: OTHER_CONSUMER_ID,
+            tenant_id: tenant,
+            subject_id: subject,
+            groups: &["team-a"],
+            role: "user",
+        },
+        OTHER_SERVICE_TOKEN,
+        OTHER_SIGNING_SECRET,
+    )
 }
 
 struct FakeUpstream;
@@ -303,7 +369,7 @@ async fn gateway_client(
         axum::http::header::HeaderValue::from_str(&caller.context).expect("上下文头合法"),
     );
     let config = StreamableHttpClientTransportConfig::with_uri(format!("{base_url}/mcp"))
-        .auth_header(SERVICE_TOKEN)
+        .auth_header(caller.service_token)
         .custom_headers(headers)
         .max_concurrent_requests(1)
         .reinit_on_expired_session(false);
@@ -460,6 +526,78 @@ async fn real_authorization_scenario() {
     assert_forbidden(call_gateway_tool(&other_client, &expected_tool, json!({})).await);
     checkpoint("负控：另一租户同名用户 tools/list 为空，tools/call 返回 -32003/403");
     let _ = other_client.cancel().await;
+
+    // 第二消费服务在同一租户字符串下登记自己的连接并授权同名用户。
+    let other_admin = other_consumer_admin(&tenant);
+    let other_created = other_admin
+        .apply(http.post(format!("{base}/api/v1/connections")))
+        .json(&json!({
+            "name": format!("other-consumer-{stamp}"),
+            "endpoint_url": upstream_url,
+            "auth_type": "none",
+        }))
+        .send()
+        .await
+        .expect("第二消费服务创建连接");
+    assert_eq!(other_created.status(), StatusCode::CREATED);
+    let other_created: Value = other_created.json().await.expect("创建响应是 JSON");
+    let other_connection_id =
+        Uuid::parse_str(other_created["id"].as_str().expect("响应包含连接 ID"))
+            .expect("连接 ID 是 UUID");
+    let other_assignment = other_admin
+        .apply(http.put(format!(
+            "{base}/api/v1/connections/{other_connection_id}/assignments/user/user-allowed"
+        )))
+        .send()
+        .await
+        .expect("第二消费服务创建用户授权");
+    assert_eq!(other_assignment.status(), StatusCode::NO_CONTENT);
+    let other_expected_tool = exposed_tool_name(other_connection_id, UPSTREAM_TOOL);
+
+    // 租户字符串相同，但消费服务不同：第一消费服务的获准用户仍只看到自己的连接。
+    let allowed_client = gateway_client(&base, &allowed_user).await;
+    let tools = allowed_client
+        .list_all_tools()
+        .await
+        .expect("第一消费服务重新列出工具");
+    assert_eq!(tools.len(), 1, "实际工具：{tools:?}");
+    assert_eq!(tools[0].name.as_ref(), expected_tool);
+
+    // 第二消费服务的同名用户只看到自己的连接，并能调用自己的工具。
+    let other_allowed_client =
+        gateway_client(&base, &other_consumer_user(&tenant, "user-allowed")).await;
+    let other_tools = other_allowed_client
+        .list_all_tools()
+        .await
+        .expect("第二消费服务列出工具");
+    assert_eq!(other_tools.len(), 1, "实际工具：{other_tools:?}");
+    assert_eq!(other_tools[0].name.as_ref(), other_expected_tool);
+    let other_result = call_gateway_tool(
+        &other_allowed_client,
+        &other_expected_tool,
+        json!({ "city": city }),
+    )
+    .await
+    .expect("第二消费服务调用自己的工具");
+    let other_text = other_result
+        .content
+        .iter()
+        .find_map(|content| match content {
+            ContentBlock::Text(text) => Some(text.text.clone()),
+            _ => None,
+        })
+        .expect("工具结果包含文本");
+    assert_eq!(
+        other_text,
+        format!("upstream-result:{UPSTREAM_TOOL}:{city}")
+    );
+
+    // 跨消费服务调用对方工具必须被拒绝，即使租户字符串、用户主体与分组相同。
+    assert_forbidden(call_gateway_tool(&other_allowed_client, &expected_tool, json!({})).await);
+    assert_forbidden(call_gateway_tool(&allowed_client, &other_expected_tool, json!({})).await);
+    checkpoint("负控：消费服务 A 的用户看不到、也调不动消费服务 B 的同租户连接，反之亦然");
+    let _ = other_allowed_client.cancel().await;
+    let _ = allowed_client.cancel().await;
 
     // 日志不得包含工具参数值。
     let logs = gateway.logs();

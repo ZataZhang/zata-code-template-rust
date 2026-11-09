@@ -3,6 +3,7 @@
 //! 连接响应从不包含凭据明文，只暴露 `credential_configured` 布尔位。
 
 use std::collections::BTreeMap;
+use std::fmt;
 
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
@@ -96,7 +97,7 @@ impl From<ConnectionStatusDto> for ConnectionStatus {
 }
 
 /// 创建连接请求。
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CreateConnectionRequest {
     /// 连接展示名称。
@@ -108,6 +109,19 @@ pub struct CreateConnectionRequest {
     /// Bearer 凭据明文；只写入，不返回。
     #[serde(default)]
     pub credential: Option<String>,
+}
+
+// 请求含明文凭据，手写 Debug 防止日志或诊断输出泄密。
+impl fmt::Debug for CreateConnectionRequest {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("CreateConnectionRequest")
+            .field("name", &self.name)
+            .field("endpoint_url", &self.endpoint_url)
+            .field("auth_type", &self.auth_type)
+            .field("credential", &self.credential.as_ref().map(|_| "<已隐藏>"))
+            .finish()
+    }
 }
 
 /// 更新连接请求；缺省字段保持原值。
@@ -129,7 +143,7 @@ pub struct UpdateConnectionRequest {
 }
 
 /// 设置或轮换凭据请求。
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SetCredentialRequest {
     /// 认证方式；`none` 表示清除凭据。
@@ -137,6 +151,17 @@ pub struct SetCredentialRequest {
     /// 凭据明文；只写入，不返回。
     #[serde(default)]
     pub credential: Option<String>,
+}
+
+// 轮换请求同样不得通过 Debug 暴露新凭据。
+impl fmt::Debug for SetCredentialRequest {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("SetCredentialRequest")
+            .field("auth_type", &self.auth_type)
+            .field("credential", &self.credential.as_ref().map(|_| "<已隐藏>"))
+            .finish()
+    }
 }
 
 /// 连接响应；凭据只暴露是否已配置。
@@ -268,6 +293,27 @@ mod tests {
         .expect("合法请求可解析");
         assert!(matches!(AuthType::from(valid.auth_type), AuthType::Bearer));
         assert_eq!(valid.credential.as_deref(), Some("token"));
+    }
+
+    #[test]
+    fn credential_request_debug_output_is_redacted() {
+        let create_request = CreateConnectionRequest {
+            name: "docs".to_owned(),
+            endpoint_url: "https://mcp.example.com/mcp".to_owned(),
+            auth_type: AuthTypeDto::Bearer,
+            credential: Some("create-secret".to_owned()),
+        };
+        let credential_request = SetCredentialRequest {
+            auth_type: AuthTypeDto::Bearer,
+            credential: Some("rotation-secret".to_owned()),
+        };
+
+        let create_debug = format!("{create_request:?}");
+        let rotation_debug = format!("{credential_request:?}");
+        assert!(!create_debug.contains("create-secret"));
+        assert!(!rotation_debug.contains("rotation-secret"));
+        assert!(create_debug.contains("已隐藏"));
+        assert!(rotation_debug.contains("已隐藏"));
     }
 
     #[test]

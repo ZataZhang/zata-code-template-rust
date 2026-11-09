@@ -1,6 +1,8 @@
 # PRD: MCP Gateway 微服务
 
 - GitHub Issue: https://github.com/ZataZhang/zata-code-template-rust/issues/4
+- lifecycle_agents:
+  - review: codex
 
 > ✅ **交付前置**：无，可立即开工。  
 > 结构化声明见 §8 Delivery Dependencies，那里是唯一事实源。
@@ -526,6 +528,15 @@ Reviewer: human evidence is limited to the service scope and API contract. Revie
 - Acceptance Status Banner: 🧍 待人工验收。
 
 ## 14. Change Log
+
+### 2026-11-09 · pre-PR reviewer 限流恢复
+
+- 类型：执行阶段配置
+- 原文：本 PRD 使用仓库默认的 `codebuddy-kimi-k3_1-pro` 执行 pre-PR review；review provider 返回 HTTP 429，连续两轮都未能产出可解析的 verdict。
+- 变更后：仅为本 PRD 的 `review` 阶段指定已安装的 Codex reviewer；review 门禁、独立 verifier、验证命令与修复轮数保持不变。
+- 原因：在保留独立审查的前提下，从 provider 限流中恢复交付流程。
+- 影响：只改变此 PRD 的 Kc reviewer 选择，不改变 MCP 产品范围或运行时行为。
+- 审核：`kc agent list` 确认 Codex 可用；重排队后由 Kc 对最终代码树重新验证与审查。
 
 ### 2026-11-09 · 运行时 SQL 与 MCP Compose 接入修正
 
