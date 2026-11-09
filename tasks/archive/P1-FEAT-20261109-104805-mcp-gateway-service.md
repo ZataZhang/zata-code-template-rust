@@ -538,6 +538,15 @@ Reviewer: human evidence is limited to the service scope and API contract. Revie
 - 影响：仅 MCP 服务的响应序列化、日志过滤、e2e 测试与指南；公开 API 路径、错误码与数据模型不变；负控为临时注入并已恢复，无测试专用生产开关。
 - 审核：执行侧自检；rv-1/rv-2/rv-3 在最终树重跑，`kc evidence check` 3/3 PASSED；负控分别以断言反转、地址策略放行、移除失败跳过、删除 `/mcp` 契约变红后恢复变绿。
 
+### 2026-11-09 · pre-PR 复审修复（OpenAPI 契约与 endpoint 长度校验）
+
+- 类型：实现与文档修正
+- 原文：pre-PR code review 指出 OpenAPI `/mcp` 说明的工具名格式 `<connection-id-prefix>__<远端工具名>` 与实现及指南不一致；创建/更新连接可返回 409，但契约未列出；超过 2048 字符的 `endpoint_url` 绕过应用层校验，最终触发数据库 CHECK 并返回 500 而非 400。
+- 变更后：OpenAPI 工具名格式更正为 `mcp_<connection-uuid-hex>_<远端工具名>`；创建与更新连接补充 `409 conflict`；`endpoint_url` 增加 `maxLength: 2048`，凭据增加 `minLength: 1`/`maxLength: 4096`；核心用例在出站策略与数据库之前拒绝超过 2048 字符的 `endpoint_url`（400 `invalid_request`），并新增回归单测；指南同步 endpoint 长度上限与重名 409。
+- 原因：让发布契约与实现一致，并让超长输入在系统边界被稳定归类为客户端错误。
+- 影响：仅 MCP 服务的输入校验、OpenAPI 与指南；公开路径、错误码集合与数据模型不变。
+- 审核：执行侧自检；最终树重跑 `just test`、`just ci`、`just test real`、`just mcp-docker-build` 与 rv-1/rv-2/rv-3 均通过，`kc evidence check` 3/3 PASSED。
+
 ### 2026-11-09 · pre-PR reviewer 限流恢复
 
 - 类型：执行阶段配置

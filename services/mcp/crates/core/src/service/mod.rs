@@ -7,6 +7,8 @@ mod tests;
 
 use std::sync::Arc;
 
+use url::Url;
+
 use crate::connection::{AuthType, Connection, TenantScope};
 use crate::error::McpError;
 use crate::identity::IdentityContext;
@@ -14,6 +16,9 @@ use crate::ports::{
     ConnectionRepository, CredentialCipher, EndpointPolicy, EndpointPolicyError, RemoteMcpClient,
     RemoteTarget, RepositoryError,
 };
+
+/// endpoint URL 原始长度上限，与数据库 CHECK 约束保持一致。
+const MAX_ENDPOINT_URL_CHARS: usize = 2048;
 
 /// 服务级限制。
 #[derive(Debug, Clone)]
@@ -81,6 +86,16 @@ impl McpService {
             ));
         }
         Ok(trimmed.to_owned())
+    }
+
+    /// 在出站策略与数据库之前拒绝超长 endpoint，避免落到内部错误。
+    fn validate_endpoint_url(endpoint: &Url) -> Result<(), McpError> {
+        if endpoint.as_str().chars().count() > MAX_ENDPOINT_URL_CHARS {
+            return Err(McpError::InvalidRequest(
+                "endpoint_url 不能超过 2048 个字符".to_owned(),
+            ));
+        }
+        Ok(())
     }
 
     /// 把仓储错误收敛为领域错误；日志只记录安全的外部描述。

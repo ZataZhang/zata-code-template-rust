@@ -15,20 +15,20 @@
 
 - §9 全部执行侧验收项已由最终代码状态的真实入口证据覆盖；仅 3 项 Human-Confirmed 保留待人工确认，未代勾。
 - `kc evidence check --evidence tasks/evidence/P1-FEAT-20261109-104805-mcp-gateway-service`：3/3 PASSED。
-- 最终树（HEAD `adc98b6` + verifier 复审修复的未提交工作树改动）重跑 `just test`、`just test real`、`just ci`、`just mcp-docker-build` 均 exit 0；`rv-1`、`rv-2` 负控打红后恢复变绿，并在最终树重捕证据。
-- `just mcp-up` 与 `/live`、`/ready` 在 checkpoint `b1e62f9` 上验证通过；之后的修复仅涉及响应序列化、日志过滤、e2e 测试与文档，不改变启动、探针或 compose 路径，最终树镜像已重建，最终树 e2e 每场景均通过真实进程 `/ready` 轮询。
+- 最终树（HEAD `48fbe38` + pre-PR 复审修复的未提交工作树改动）重跑 `just test`、`just test real`、`just ci`、`just mcp-docker-build` 均 exit 0；`rv-1`、`rv-2`、`rv-3` 在最终树重新执行并变绿，证据文件哈希不变。
+- `just mcp-up` 与 `/live`、`/ready` 在 checkpoint `b1e62f9` 上验证通过；之后的修复仅涉及响应序列化、日志过滤、endpoint 长度校验、e2e 测试与文档，不改变启动、探针或 compose 路径，最终树镜像已重建，最终树 e2e 每场景均通过真实进程 `/ready` 轮询。
 
 ## 2. 最终代码状态
 
 | 字段 | 值 |
 |---|---|
-| HEAD | `adc98b65ece5e23ff9478d010871e035dd51d018`（verifier 复审修复为其后未提交工作树改动） |
-| 工作树指纹（sha256） | `06cdfdf69dc801c151bffa8326731b827e3e59fa8777218e1a6919486aaee2c6` |
-| 指纹范围 | tracked + untracked（`git ls-files -co --exclude-standard`），排除 `tasks/evidence/**`、本 PRD 与 `.agent-runner/**` 等记录路径；按“每文件内容哈希 + 路径”排序后汇总 |
+| HEAD | `48fbe384e808abef833629e321b219df6578c24d`（pre-PR 复审修复为其后未提交工作树改动） |
+| 工作树指纹（sha256） | `579109453dafccfda95b2410901f51cd30b1c2480d95952631e922993f9bb4b3` |
+| 指纹范围 | tracked + untracked（`git ls-files -co --exclude-standard`），排除 `tasks/evidence/**`、本 PRD 与 `.agent-runner/**` 等记录路径；逐文件 `shasum -a 256` 后与路径组成行，`LC_ALL=C sort` 排序再汇总 sha256 |
 | 参与文件数 | 584 |
 | Rust / Cargo | 1.99.0 / 1.99.0 |
 | Docker | 29.4.2 |
-| 记录时间（UTC） | 2026-11-09T06:15:59Z |
+| 记录时间（UTC） | 2026-11-09T08:06:59Z |
 
 证据文件在最终代码状态重跑后生成，摘要如下：
 
@@ -88,7 +88,7 @@
 | `just test` | exit 0（2026-11-09，最终树） |
 | `just ci` | exit 0（fmt + clippy `-D warnings` + 全量测试 + `cargo doc -D warnings`，最终树重跑） |
 | `just test real` | exit 0（最终树重跑）；`tpl-mcp` 的 `real_authorization_scenario`、`real_remote_connection_scenario` 均通过；缺少 `TEST_MCP_DATABASE_URL` 时测试 `expect` 失败而非静默跳过 |
-| `just mcp-docker-build` | 最终树重建成功，`tpl-mcp:local` 镜像 manifest `sha256:ee96d413…`（首次因 Docker Hub TLS 握手超时失败，重试后成功） |
+| `just mcp-docker-build` | 最终树重建成功，`tpl-mcp:local` 镜像 manifest list `sha256:f5dd6de0…`（pre-PR 复审修复后重建一次通过） |
 | `just mcp-up` | 在 checkpoint `b1e62f9` 上验证：`mcp-service` 与 `mcp-postgres` 启动至 healthy；其后的修复不触及该路径 |
 | `curl http://127.0.0.1:18092/ready` | checkpoint 验证为 `{"status":"ready","checks":{"database":"ok"}}`；最终树 e2e 每场景均通过真实进程 `/ready` 轮询 |
 | `curl http://127.0.0.1:18092/live` | checkpoint 验证为 `{"status":"ok"}` |
@@ -102,6 +102,7 @@ Compose 验证说明：共享开发 Nacos 缺少与本服务无关的 Agent/trac
 - 全仓依赖守卫原先未登记 `mcp-*` 层，`just test` 失败；已登记并通过。
 - pre-PR 复审修复：`CreateConnectionRequest`、`SetCredentialRequest` 手写 `Debug` 以隐藏凭据明文，并增加脱敏单测；e2e 增加第二消费服务的独立 token/签名密钥，验证同租户字符串下跨消费服务的连接与调用隔离。
 - verifier 复审修复：`ConnectionResponse` 的 `created_at`/`updated_at` 改为 RFC 3339 并加回归测试；rv-2 增加 HTTPS 云元数据、私网、IPv4 映射与 ULA 地址矩阵与开发 loopback 模式私网拒绝；e2e 增加真实不可用上游与健康连接并存的失败隔离场景；日志初始化把 `rmcp` 目标压回 `info`，e2e 以 `RUST_LOG=debug` 运行并断言无载荷泄漏；指南补充 JSON 响应在解析前的 16 MiB 内置上限与 rmcp 日志固定说明。负控为临时注入并用 `cmp` 核对恢复，未保留测试专用生产开关。
+- pre-PR 复审（code-reviewer）修复：OpenAPI 的 `/mcp` 工具名格式更正为 `mcp_<connection-uuid-hex>_<远端工具名>`，创建与更新连接补充 `409 conflict` 响应，`endpoint_url` 增加 `maxLength: 2048`、凭据增加 `minLength`/`maxLength` 约束；核心用例在出站策略与数据库之前拒绝超过 2048 字符的 `endpoint_url`（返回 400 `invalid_request`，不再由数据库 CHECK 产生 500），并新增回归单测；指南同步 endpoint 长度上限与重名 409。
 - 未连接真实第三方 MCP provider；外部网络、TLS 与供应商差异不在本机证据范围内。
 - 未创建 PR；独立 verifier 结论与 PR 呈递由 runner 完成。
 - 3 项 Human-Confirmed 保持未勾选，等待用户本人审阅 §9.1 呈递与服务范围。

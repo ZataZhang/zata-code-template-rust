@@ -111,7 +111,7 @@ OpenAPI 文件：[`services/mcp/openapi.yaml`](../../services/mcp/openapi.yaml)�
 
 创建或更新 endpoint 时先执行出站地址策略校验，再写入数据库。`PATCH` 的 `status: "disabled"` 与停用接口等价；从 `none` 切换到 `bearer` 前必须先通过凭据接口保存凭据。授权新增与移除是幂等的，重复请求同样返回 `204`。
 
-错误码：`invalid_request`、`unsafe_endpoint`、`unauthorized`、`forbidden`、`not_found`、`conflict`、`credential_unavailable`、`upstream_unavailable`、`payload_too_large`、`internal`。REST JSON 请求体上限 256 KiB；凭据必须为可见 ASCII，长度 1–4096。
+错误码：`invalid_request`、`unsafe_endpoint`、`unauthorized`、`forbidden`、`not_found`、`conflict`、`credential_unavailable`、`upstream_unavailable`、`payload_too_large`、`internal`。REST JSON 请求体上限 256 KiB；`endpoint_url` 长度上限 2048 字符；凭据必须为可见 ASCII，长度 1–4096。创建与更新连接时同一租户内重名返回 `409 conflict`。
 
 ## 5. MCP 网关
 

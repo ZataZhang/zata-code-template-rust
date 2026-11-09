@@ -33,6 +33,7 @@
 6. 在最终代码状态重跑 rv-1/rv-2/rv-3，并记录工作树指纹。
 7. pre-PR 复审修复后，在最终树重跑 rv-1/rv-2 负控（打红）、恢复断言与依赖，重捕证据，并重跑 `just ci`、`just test real` 与 `just mcp-docker-build`。
 8. verifier 复审修复后，在最终树重跑 rv-1/rv-2/rv-3（两者以 `RUST_LOG=debug` 运行），重捕证据并更新 `evidence.json`、证据报告与 PRD Change Log。
+9. pre-PR 复审（code-reviewer）修复后，在最终树重跑 rv-1/rv-2/rv-3 与 `just test`、`just ci`、`just test real`、`just mcp-docker-build`，重捕证据并更新证据报告与 PRD Change Log。
 
 ## 4. 负控设计
 

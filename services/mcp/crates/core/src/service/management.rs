@@ -27,6 +27,7 @@ impl McpService {
         Self::require_admin(identity)?;
         let name = Self::validate_connection_name(&input.name)?;
         let credential = prepare_credential(input.auth_type, input.credential)?;
+        Self::validate_endpoint_url(&input.endpoint_url)?;
         let validated = self
             .dependencies
             .endpoint_policy
@@ -78,6 +79,7 @@ impl McpService {
             connection.name = Self::validate_connection_name(&name)?;
         }
         if let Some(endpoint_url) = changes.endpoint_url {
+            Self::validate_endpoint_url(&endpoint_url)?;
             let validated = self
                 .dependencies
                 .endpoint_policy

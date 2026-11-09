@@ -128,6 +128,8 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
         "500":
           $ref: "#/components/responses/Internal"
   /api/v1/connections/{connection_id}:
@@ -176,6 +178,8 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
         "500":
           $ref: "#/components/responses/Internal"
     delete:
@@ -338,8 +342,8 @@ paths:
         MCP Streamable HTTP 入口。每个 HTTP 请求都必须同时携带服务 token 与签名用户
         上下文；客户端可以是 `user` 或 `admin` 角色。
 
-        工具名格式为 `<connection-id-prefix>__<远端工具名>`，连接 ID 前缀在连接生命周期内
-        稳定。`tools/list` 只返回当前租户、当前主体或所属分组已授权的连接工具；
+        工具名格式为 `mcp_<connection-uuid-hex>_<远端工具名>`，前缀中的连接 ID 在连接
+        生命周期内稳定。`tools/list` 只返回当前租户、当前主体或所属分组已授权的连接工具；
         `tools/call` 在调用时重新查询授权，不复用列表缓存。单个连接不可用时只跳过
         该连接，不影响其他连接。
 
@@ -509,6 +513,7 @@ components:
         endpoint_url:
           type: string
           format: uri
+          maxLength: 2048
         auth_type:
           $ref: "#/components/schemas/AuthType"
         credential_configured:
@@ -537,12 +542,15 @@ components:
         endpoint_url:
           type: string
           format: uri
+          maxLength: 2048
         auth_type:
           $ref: "#/components/schemas/AuthType"
         credential:
           type: string
           writeOnly: true
-          description: Bearer 凭据明文；只写入，不返回，不进入日志。
+          minLength: 1
+          maxLength: 4096
+          description: Bearer 凭据明文（可见 ASCII，长度 1–4096）；只写入，不返回，不进入日志。
     UpdateConnectionRequest:
       type: object
       additionalProperties: false
@@ -554,6 +562,7 @@ components:
         endpoint_url:
           type: string
           format: uri
+          maxLength: 2048
         auth_type:
           $ref: "#/components/schemas/AuthType"
         status:
@@ -568,7 +577,9 @@ components:
         credential:
           type: string
           writeOnly: true
-          description: "可见 ASCII，长度 1–4096；`auth_type: none` 时省略或置空。"
+          minLength: 1
+          maxLength: 4096
+          description: "可见 ASCII，长度 1–4096；`auth_type: none` 时省略。"
     Assignment:
       type: object
       required: [subject_type, subject_id]

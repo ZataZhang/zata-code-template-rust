@@ -653,6 +653,46 @@ async fn auth_type_and_credential_must_match() {
 }
 
 #[tokio::test]
+async fn oversized_endpoint_is_rejected_before_storage() {
+    let rig = TestRig::new();
+    let mut input = new_connection("docs", AuthType::None, None);
+    input.endpoint_url = Url::parse(&format!("https://remote.example.com/{}", "a".repeat(2048)))
+        .expect("测试地址有效");
+    let error = rig
+        .service
+        .create_connection(&admin_identity(), input)
+        .await
+        .expect_err("超长 endpoint 必须被拒绝");
+    assert!(matches!(error, McpError::InvalidRequest(_)));
+    assert!(rig.repository.stored_connections().is_empty());
+
+    let connection = rig
+        .service
+        .create_connection(
+            &admin_identity(),
+            new_connection("docs", AuthType::None, None),
+        )
+        .await
+        .expect("创建合法连接");
+    let error = rig
+        .service
+        .update_connection(
+            &admin_identity(),
+            connection.id,
+            ConnectionChanges {
+                endpoint_url: Some(
+                    Url::parse(&format!("https://remote.example.com/{}", "b".repeat(2048)))
+                        .expect("测试地址有效"),
+                ),
+                ..ConnectionChanges::default()
+            },
+        )
+        .await
+        .expect_err("超长 endpoint 更新必须被拒绝");
+    assert!(matches!(error, McpError::InvalidRequest(_)));
+}
+
+#[tokio::test]
 async fn tool_listing_is_namespaced_and_skips_failing_connections() {
     let rig = TestRig::new();
     let docs = rig.seed_connection("docs", ConnectionStatus::Active);
