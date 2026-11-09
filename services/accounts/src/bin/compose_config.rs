@@ -44,6 +44,7 @@ const HOST_PORT_OVERRIDES: &[(&str, &str)] = &[
     ("COMPOSE_ADMIN_PORT", "ADMIN_PORT"),
     ("COMPOSE_TRACING_UI_PORT", "TRACING_UI_PORT"),
     ("COMPOSE_ACCOUNTS_PORT", "ACCOUNTS_PORT"),
+    ("COMPOSE_MCP_PORT", "MCP_PORT"),
 ];
 
 #[tokio::main]
@@ -156,6 +157,7 @@ impl Invocation {
 enum StackMode {
     Full,
     Accounts,
+    Mcp,
 }
 
 impl StackMode {
@@ -163,14 +165,22 @@ impl StackMode {
         match value {
             "full" => Some(Self::Full),
             "accounts" => Some(Self::Accounts),
+            "mcp" => Some(Self::Mcp),
             _ => None,
         }
     }
 
     fn compose_files(self) -> &'static [&'static str] {
         match self {
-            Self::Full => &["docker-compose.yml"],
+            Self::Full | Self::Mcp => &["docker-compose.yml"],
             Self::Accounts => &["docker-compose.yml", "docker-compose.accounts.yml"],
+        }
+    }
+
+    fn profile(self) -> Option<&'static str> {
+        match self {
+            Self::Mcp => Some("mcp"),
+            Self::Full | Self::Accounts => None,
         }
     }
 }
@@ -221,6 +231,9 @@ fn run_compose(
         .arg("/dev/null")
         .arg("--project-name")
         .arg(project_name);
+    if let Some(profile) = stack_mode.profile() {
+        command.arg("--profile").arg(profile);
+    }
     for compose_file in stack_mode.compose_files() {
         command.arg("--file").arg(compose_file);
     }
@@ -293,7 +306,13 @@ fn apply_host_port_overrides(child_environment: &mut BTreeMap<String, OsString>)
 }
 
 fn validate_compose_ports(child_environment: &BTreeMap<String, OsString>) -> Result<()> {
-    for port_name in ["WEB_PORT", "ADMIN_PORT", "TRACING_UI_PORT", "ACCOUNTS_PORT"] {
+    for port_name in [
+        "WEB_PORT",
+        "ADMIN_PORT",
+        "TRACING_UI_PORT",
+        "ACCOUNTS_PORT",
+        "MCP_PORT",
+    ] {
         let Some(port_value) = child_environment.get(port_name) else {
             continue;
         };
@@ -311,16 +330,22 @@ fn validate_compose_ports(child_environment: &BTreeMap<String, OsString>) -> Res
 }
 
 fn report_safe_settings(project_name: &str, child_environment: &BTreeMap<String, OsString>) {
-    let port_summary = ["WEB_PORT", "ADMIN_PORT", "TRACING_UI_PORT", "ACCOUNTS_PORT"]
-        .into_iter()
-        .filter_map(|key| {
-            child_environment
-                .get(key)
-                .and_then(|value| value.to_str())
-                .map(|value| format!("{key}={value}"))
-        })
-        .collect::<Vec<_>>()
-        .join(" ");
+    let port_summary = [
+        "WEB_PORT",
+        "ADMIN_PORT",
+        "TRACING_UI_PORT",
+        "ACCOUNTS_PORT",
+        "MCP_PORT",
+    ]
+    .into_iter()
+    .filter_map(|key| {
+        child_environment
+            .get(key)
+            .and_then(|value| value.to_str())
+            .map(|value| format!("{key}={value}"))
+    })
+    .collect::<Vec<_>>()
+    .join(" ");
     eprintln!("Compose project={project_name}; {port_summary}");
 }
 
@@ -393,7 +418,7 @@ fn usage_error() -> anyhow::Error {
 
 fn print_usage() {
     eprintln!(
-        "用法:\n  compose-config compose <full|accounts> <允许的 Compose 运维子命令> [参数]\n  compose-config helper <db-backup|db-restore|stack-smoke> [args...]\n\n仅允许配置安全的运维子命令；配置验证只接受 `config --quiet` 或 `config --services`。\nCompose Data ID 从项目配置 `[nacos].compose_data_id` 读取，默认 rust-study-compose.properties。"
+        "用法:\n  compose-config compose <full|accounts|mcp> <允许的 Compose 运维子命令> [参数]\n  compose-config helper <db-backup|db-restore|stack-smoke> [args...]\n\n仅允许配置安全的运维子命令；配置验证只接受 `config --quiet` 或 `config --services`。\nCompose Data ID 从项目配置 `[nacos].compose_data_id` 读取，默认 rust-study-compose.properties。\n`mcp` 模式启用 Compose 的 mcp profile，只用于独立启动 MCP 服务。"
     );
 }
 
@@ -482,5 +507,18 @@ mod tests {
     fn legacy_env_file_is_rejected_when_set() {
         assert!(reject_legacy_env_file_value(None).is_ok());
         assert!(reject_legacy_env_file_value(Some(OsString::from("old.env"))).is_err());
+    }
+
+    #[test]
+    fn mcp_mode_enables_the_mcp_profile_on_the_shared_compose_file() {
+        let mcp = StackMode::parse("mcp").expect("mcp 是合法模式");
+        assert_eq!(mcp.compose_files(), &["docker-compose.yml"]);
+        assert_eq!(mcp.profile(), Some("mcp"));
+        assert_eq!(StackMode::parse("full").and_then(StackMode::profile), None);
+        assert_eq!(
+            StackMode::parse("accounts").map(StackMode::compose_files),
+            Some(&["docker-compose.yml", "docker-compose.accounts.yml"][..])
+        );
+        assert!(StackMode::parse("unknown").is_none());
     }
 }

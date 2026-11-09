@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
 # platform/* 是无业务归属的共享平台 crate；services/* 是独立业务服务；各服务的 crates/* 是私有层；tools/* 是开发期工具。
-members = ["platform/*", "services/*", "services/accounts/crates/*", "services/agent/crates/*", "services/agent-tracing/crates/*", "tools/*", "examples/agent-business-service"]
+members = ["platform/*", "services/*", "services/accounts/crates/*", "services/agent/crates/*", "services/agent-tracing/crates/*", "services/mcp/crates/*", "tools/*", "examples/agent-business-service"]
 
 [workspace.package]
 version = "0.1.0"
@@ -25,13 +25,22 @@ tpl-agent-core = { path = "services/agent/crates/core" }
 tpl-agent-api = { path = "services/agent/crates/api" }
 tpl-agent-engines = { path = "services/agent/crates/engines" }
 tpl-agent-infrastructure = { path = "services/agent/crates/infrastructure" }
+# MCP 服务私有层（依赖方向见 docs/architecture/system-design.md；声明的依赖由 services/mcp/tests/architecture.rs 检查）
+tpl-mcp-core = { path = "services/mcp/crates/core" }
+tpl-mcp-api = { path = "services/mcp/crates/api" }
+tpl-mcp-infrastructure = { path = "services/mcp/crates/infrastructure" }
 
+aes-gcm = "0.10"
 anyhow = "1"
 opendal = { version = "0.56", default-features = false, features = ["executors-tokio", "layers-timeout", "reqwest-rustls-tls", "services-oss", "services-s3"] }
 clap = { version = "4", features = ["derive"] }
 argon2 = "0.6"
 async-trait = "0.1"
 axum = { version = "0.8", features = ["multipart"] }
+base64 = "0.23"
+hmac = "0.13"
+rmcp = { version = "3.9.0", default-features = false }
+subtle = "2"
 axum-extra = { version = "0.12", features = ["cookie"] }
 pulldown-cmark = "0.13.5"
 dotenvy = "0.15"
@@ -54,6 +63,7 @@ tempfile = "3"
 time = "0.3"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "net", "time", "sync"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
+tokio-util = "0.7"
 tower = "0.5"
 tower-http = { version = "0.7", features = ["trace", "timeout"] }
 url = "2"

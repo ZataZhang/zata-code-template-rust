@@ -8,6 +8,7 @@
 local_test_database_url := "postgres://testuser:testpass@localhost:5433/testdb"
 local_test_redis_url := "redis://:redis123@localhost:6390/0"
 local_test_agent_database_url := "postgres://agent:agentpass@localhost:5435/agent_dev"
+local_test_mcp_database_url := "postgres://mcp:mcppass@localhost:5436/mcp_dev"
 
 default:
     @just --list
@@ -69,13 +70,15 @@ test target="":
         export TEST_DATABASE_URL="${TEST_DATABASE_URL:-{{ local_test_database_url }}}"
         export TEST_REDIS_URL="${TEST_REDIS_URL:-{{ local_test_redis_url }}}"
         export TEST_AGENT_DATABASE_URL="${TEST_AGENT_DATABASE_URL:-{{ local_test_agent_database_url }}}"
-        echo "使用测试库：${TEST_DATABASE_URL%%@*}@…、${TEST_AGENT_DATABASE_URL%%@*}@…（需要先 just db-up）"
+        export TEST_MCP_DATABASE_URL="${TEST_MCP_DATABASE_URL:-{{ local_test_mcp_database_url }}}"
+        echo "使用测试库：${TEST_DATABASE_URL%%@*}@…、${TEST_AGENT_DATABASE_URL%%@*}@…、${TEST_MCP_DATABASE_URL%%@*}@…（需要先 just db-up）"
         cargo test --workspace -- --ignored
         ;;
       all)
         export TEST_DATABASE_URL="${TEST_DATABASE_URL:-{{ local_test_database_url }}}"
         export TEST_REDIS_URL="${TEST_REDIS_URL:-{{ local_test_redis_url }}}"
         export TEST_AGENT_DATABASE_URL="${TEST_AGENT_DATABASE_URL:-{{ local_test_agent_database_url }}}"
+        export TEST_MCP_DATABASE_URL="${TEST_MCP_DATABASE_URL:-{{ local_test_mcp_database_url }}}"
         cargo test --workspace -- --include-ignored
         ;;
       *)
@@ -238,6 +241,27 @@ agent-down:
 # 省略 --scenario 时依次运行全部场景。真实外部 Runtime 需显式设置 AGENT_E2E_REAL_RUNTIME=1。
 agent-e2e *args:
     ./scripts/agent-e2e.sh {{ args }}
+
+# ---------------------------------------------------------------------------
+# MCP 服务（services/mcp，独立进程 mcp-service，端口 8092）
+# ---------------------------------------------------------------------------
+
+# 构建 MCP 服务独立镜像
+mcp-docker-build:
+    docker build -f services/mcp/Dockerfile -t tpl-mcp:local .
+
+# 单独启动 MCP 服务与其专属 PostgreSQL（Compose mcp profile；秘密从 Nacos 读取）
+mcp-up:
+    ./scripts/compose-config.sh compose mcp up -d --build --wait mcp-service
+
+# 停止 MCP 服务（保留数据库与数据卷）
+mcp-down:
+    ./scripts/compose-config.sh compose mcp stop mcp-service
+
+# 真实入口端到端：测试 PostgreSQL + 真实 mcp-service 进程 + 本地假 MCP 上游。
+# 可用场景：authorization、remote-connection；省略 --scenario 时依次运行全部场景。
+mcp-e2e *args:
+    ./scripts/mcp-e2e.sh {{ args }}
 
 # ---------------------------------------------------------------------------
 # 整套服务（账号 + Agent tracing、各自 PostgreSQL、Redis 与三个独立前端入口）

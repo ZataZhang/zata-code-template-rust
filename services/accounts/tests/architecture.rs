@@ -61,6 +61,10 @@ const ALLOWED_LAYER_DEPENDENCIES: &[(&str, &[&str])] = &[
             "agent-infrastructure",
         ],
     ),
+    ("mcp-core", &[]),
+    ("mcp-api", &["mcp-core"]),
+    ("mcp-infrastructure", &["mcp-core"]),
+    ("mcp", &["mcp-api", "mcp-core", "mcp-infrastructure"]),
 ];
 
 /// 某一层实际声明的内部依赖（含 dev / build 依赖）。
@@ -279,6 +283,10 @@ fn checker_rejects_forbidden_and_unregistered_dependencies() {
                 "agent-infrastructure",
             ],
         ),
+        layer("mcp-core", &[]),
+        layer("mcp-api", &["mcp-core"]),
+        layer("mcp-infrastructure", &["mcp-core"]),
+        layer("mcp", &["mcp-api", "mcp-core", "mcp-infrastructure"]),
         layer("billing-core", &[]), // 未登记的新层
     ];
 

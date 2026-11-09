@@ -1,0 +1,43 @@
+[package]
+name = "tpl-mcp"
+description = "独立 MCP Gateway 微服务的装配层：远端连接、凭据、授权与 Streamable HTTP 网关。"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "mcp-service"
+path = "src/main.rs"
+
+[dependencies]
+tpl-mcp-api.workspace = true
+tpl-mcp-core.workspace = true
+tpl-mcp-infrastructure.workspace = true
+
+anyhow.workspace = true
+axum.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+async-trait.workspace = true
+axum.workspace = true
+base64.workspace = true
+hmac.workspace = true
+reqwest.workspace = true
+rmcp = { workspace = true, features = [
+    "client",
+    "server",
+    "transport-streamable-http-client-reqwest",
+    "transport-streamable-http-server",
+] }
+serde_json.workspace = true
+sha2.workspace = true
+sqlx.workspace = true
+time.workspace = true
+url.workspace = true
+uuid.workspace = true
+
+[lints]
+workspace = true

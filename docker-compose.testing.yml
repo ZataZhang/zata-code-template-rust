@@ -11,8 +11,9 @@
 #   REDIS_URL=redis://:redis123@localhost:6390/0
 #   AGENT_TRACING_DATABASE_URL=postgres://agent_tracing:tracepass@localhost:5434/agent_tracing_dev
 #   AGENT_DATABASE_URL=postgres://agent:agentpass@localhost:5435/agent_dev
+#   MCP_DATABASE_URL=postgres://mcp:mcppass@localhost:5436/mcp_dev
 #
-# 端口特意用 5433 / 5434 / 5435 / 6390，避开本机上其他项目常用的 5432 / 6379；
+# 端口特意用 5433 / 5434 / 5435 / 5436 / 6390，避开本机上其他项目常用的 5432 / 6379；
 # 不写 container_name，避免和别的 compose 项目的容器重名。
 # -----------------------------------------------------------------------------
 
@@ -70,6 +71,23 @@ services:
       retries: 15
     restart: unless-stopped
 
+  mcp-postgres:
+    image: postgres:17-alpine
+    ports:
+      - "127.0.0.1:5436:5432"
+    environment:
+      POSTGRES_USER: mcp
+      POSTGRES_PASSWORD: mcppass
+      POSTGRES_DB: mcp_dev
+    volumes:
+      - mcp-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mcp -d mcp_dev"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+    restart: unless-stopped
+
   redis:
     image: redis:7-alpine
     ports:
@@ -86,3 +104,4 @@ volumes:
   postgres-data:
   tracing-postgres-data:
   agent-postgres-data:
+  mcp-postgres-data:

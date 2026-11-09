@@ -5,7 +5,7 @@
 > ✅ **交付前置**：无，可立即开工。  
 > 结构化声明见 §8 Delivery Dependencies，那里是唯一事实源。
 
-> ⬜ **验收状态**：未开工。  
+> 🧍 **验收状态**：待人工验收。  
 > 本行是 §9 Acceptance Checklist 的投影，归档前按实际证据更新。
 
 > 本 PRD 分为两层：Part A 供需求方确认行为和产品范围；Part B 为实现者提供架构、接口和验证细节。
@@ -212,6 +212,15 @@ This section is a living implementation guide based on current repository analys
 ├── services/mcp/tests/
 │   [新增]
 │   【总结】验证 crate 边界、真实 HTTP/MCP 流程和 PostgreSQL 迁移。
+├── services/accounts/src/bin/compose_config.rs
+│   [修改]
+│   【总结】让 compose-config 接受并透传 MCP Compose 键，mcp 模式启用 mcp profile。
+├── services/accounts/crates/infrastructure/src/config/compose.rs
+│   [修改]
+│   【总结】允许 MCP 秘密与端口键通过受限 Properties 校验。
+├── scripts/mcp-e2e.sh
+│   [新增]
+│   【总结】提供真实 MCP 服务进程与本地假上游的端到端场景。
 ├── services/mcp/Dockerfile
 │   [新增]
 │   【总结】生成不依赖其他业务服务私有 crate 的独立镜像。
@@ -224,9 +233,6 @@ This section is a living implementation guide based on current repository analys
 ├── services/mcp/openapi.yaml
 │   [新增]
 │   【总结】描述 REST 管理接口、字段、错误码和鉴权。
-├── services/mcp/.sqlx/
-│   [新增]
-│   【总结】维护该服务独立的 SQLx 编译期查询元数据。
 ├── docker-compose.yml
 │   [修改]
 │   【总结】增加可选 MCP 服务与其专属 PostgreSQL。
@@ -251,6 +257,12 @@ This section is a living implementation guide based on current repository analys
 ├── docs/guides/mcp-service.md
 │   [新增]
 │   【总结】说明服务 API、身份信任、配置、启动、探针和接入方式。
+├── docs/guides/configuration.md
+│   [修改]
+│   【总结】记录 MCP 服务配置来源与受限 Compose 环境变量。
+├── docs/guides/deployment.md
+│   [修改]
+│   【总结】记录可选 mcp profile、秘密注入、备份与故障排查。
 └── No frontend impact
     【总结】本期不改 frontends/public、frontends/admin 或 frontends/tracing。
 ```
@@ -431,43 +443,43 @@ Reviewer: human evidence is limited to the service scope and API contract. Revie
 
 #### Architecture Acceptance
 
-- [ ] services/mcp is an independent workspace service with its own data migrations and binary; no MCP behavior is added to tpl-agent-*.
-- [ ] The new service architecture test confirms allowed dependency direction and forbids dependencies on private crates from accounts, Agent, or Agent tracing.
-- [ ] docs/architecture/system-design.md and docs/ai-standards/architecture.md describe the service boundary and dependency rules.
+- [x] services/mcp is an independent workspace service with its own data migrations and binary; no MCP behavior is added to tpl-agent-*.（证据：`services/mcp/` 独立 workspace、二进制与 `migrations/`；`cargo metadata` 显示 MCP 仅依赖本服务 crate；`tpl-agent-*` 未加入 MCP 行为）
+- [x] The new service architecture test confirms allowed dependency direction and forbids dependencies on private crates from accounts, Agent, or Agent tracing.（证据：`services/mcp/tests/architecture.rs` 的 `mcp_layer_dependencies_follow_the_allowed_direction` 与负控；`services/accounts/tests/architecture.rs` 登记 `mcp-*` 层后全仓守卫通过；`cargo tree -p tpl-mcp` 不含 accounts/Agent 私有 crate）
+- [x] docs/architecture/system-design.md and docs/ai-standards/architecture.md describe the service boundary and dependency rules.（证据：两份文档已更新 MCP 服务边界、数据所有权与 `mcp-core/api/infrastructure/mcp` 依赖方向）
 
 #### Dependency Acceptance
 
-- [ ] Cargo.toml and Cargo.lock use a published RMCP version with only the required Streamable HTTP client/server features; cargo tree shows no dependency on another service’s private crate.
+- [x] Cargo.toml and Cargo.lock use a published RMCP version with only the required Streamable HTTP client/server features; cargo tree shows no dependency on another service’s private crate.（证据：`rmcp 3.9.0`；api 启用 `server` + `transport-streamable-http-server`，infrastructure 启用 `client` + `transport-streamable-http-client-reqwest`；`cargo tree -p tpl-mcp` 不含 `tpl-accounts*` / `tpl-agent*`）
 
 #### Behavior Acceptance
 
-- [ ] REST management operations create, update, disable, delete, inspect and discover remote Streamable HTTP MCP connections for the authenticated consumer and tenant.
-- [ ] Credential create/update responses return only configured status; persisted credential bytes are encrypted; logs, errors and Debug output contain neither credential nor tool arguments/results.
-- [ ] Assignment to a user or group exposes namespaced tools in tools/list and tools/call rechecks access with a fresh caller context.
-- [ ] One failing upstream is omitted without removing tools from healthy upstreams; duplicate upstream tool names remain unambiguous.
-- [ ] Endpoint validation runs on both write and consumption paths, forbids unsafe destinations and redirects, and fails closed on DNS or identity errors.
+- [x] REST management operations create, update, disable, delete, inspect and discover remote Streamable HTTP MCP connections for the authenticated consumer and tenant.（证据：`rv-2-remote-connection.txt` 覆盖创建、检查、工具发现与真实调用；`services/mcp/tests/http_end_to_end.rs` 与 core 用例覆盖更新/停用/删除；`rv-3-docs-scope.txt` 校验 OpenAPI 与路由一致）
+- [x] Credential create/update responses return only configured status; persisted credential bytes are encrypted; logs, errors and Debug output contain neither credential nor tool arguments/results.（证据：`rv-2-remote-connection.txt` 的 `credential_configured`、PostgreSQL 密文断言与进程日志扫描；`services/mcp/crates/infrastructure` 的 Debug 脱敏与密文单测）
+- [x] Assignment to a user or group exposes namespaced tools in tools/list and tools/call rechecks access with a fresh caller context.（证据：`rv-1-authorization.txt` 中获准用户成功、未授权用户与跨租户被拒；core 用例验证 `tools/call` 重新查询授权）
+- [x] One failing upstream is omitted without removing tools from healthy upstreams; duplicate upstream tool names remain unambiguous.（证据：`cargo test -p tpl-mcp-core` 的 `tool_listing_is_namespaced_and_skips_failing_connections` 断言失败连接被跳过、健康连接工具保留、不同连接同名工具前缀不同）
+- [x] Endpoint validation runs on both write and consumption paths, forbids unsafe destinations and redirects, and fails closed on DNS or identity errors.（证据：`rv-2-remote-connection.txt` 的 loopback/private 拒绝与零上游请求；core 用例 `consumption_revalidates_endpoint_and_fails_closed` 验证消费路径重新校验且不泄露凭据）
 
 #### Documentation Acceptance
 
-- [ ] services/mcp/openapi.yaml matches the REST management contract and the actual service router.
-- [ ] docs/guides/mcp-service.md explains consumer identity, credentials, configuration, API, local startup, MCP transport, failure handling, and explicit non-goals.
-- [ ] Configuration examples show non-secret defaults commented and secrets as empty variables; no real credentials are added.
-- [ ] docs/architecture/system-design.md, docs/ai-standards/architecture.md, and docs/guides/mcp-service.md agree on data ownership and deployment.
+- [x] services/mcp/openapi.yaml matches the REST management contract and the actual service router.（证据：`rv-3-docs-scope.txt` 逐条比对 8 个必需路径/方法与 `services/mcp/crates/api/src/routes/*.rs` 的路由字面量，并确认 `/mcp` 由 `nest_service("/mcp")` 挂载）
+- [x] docs/guides/mcp-service.md explains consumer identity, credentials, configuration, API, local startup, MCP transport, failure handling, and explicit non-goals.（证据：`docs/guides/mcp-service.md` §1–§8；`rv-3-docs-scope.txt` 校验范围/非目标关键词与 API 覆盖）
+- [x] Configuration examples show non-secret defaults commented and secrets as empty variables; no real credentials are added.（证据：`services/mcp/.env.example`、`services/mcp/config.toml`、根 `.env.example`；MCP 秘密变量均为空值，未写入真实凭据）
+- [x] docs/architecture/system-design.md, docs/ai-standards/architecture.md, and docs/guides/mcp-service.md agree on data ownership and deployment.（证据：三份文档与 `docs/guides/deployment.md`、`docs/guides/configuration.md` 对独立数据库、可选 `mcp` profile、端口 8092 与秘密注入的描述一致）
 
 #### Validation Acceptance
 
-- [ ] just test passes on the final implementation tree.
-- [ ] just ci passes on the final implementation tree.
-- [ ] just test real proves migrations and repository queries against a real MCP PostgreSQL database, with no silent skip when required test configuration is absent.
-- [ ] rv-1 evidence proves an allowed user can list/call a tool while an unassigned user and another tenant are denied through the real MCP endpoint.
-- [ ] rv-2 evidence proves the management API, committed PostgreSQL state, encrypted credentials, outbound safety checks and real RMCP call across a service restart.
-- [ ] The actual MCP process is started through just mcp-up, /ready checks its own database, and the independent image builds with just mcp-docker-build.
-- [ ] All R2/R3 evidence is tied to the final Git tree and rerun after any affected implementation change.
+- [x] just test passes on the final implementation tree.（证据：2026-11-09 在本工作树运行 `just test` exit 0）
+- [x] just ci passes on the final implementation tree.（证据：2026-11-09 运行 `just ci`（fmt + clippy `-D warnings` + 全量测试 + `cargo doc -D warnings`）exit 0）
+- [x] just test real proves migrations and repository queries against a real MCP PostgreSQL database, with no silent skip when required test configuration is absent.（证据：`just test real` exit 0；`tpl-mcp` 的 2 个 `#[ignore]` 场景在 `TEST_MCP_DATABASE_URL` 下通过；未设置该变量时测试用 `expect` 失败而非静默跳过）
+- [x] rv-1 evidence proves an allowed user can list/call a tool while an unassigned user and another tenant are denied through the real MCP endpoint.（证据：`tasks/evidence/P1-FEAT-20261109-104805-mcp-gateway-service/rv-1-authorization.txt`；`kc evidence check` item 1 PASSED）
+- [x] rv-2 evidence proves the management API, committed PostgreSQL state, encrypted credentials, outbound safety checks and real RMCP call across a service restart.（证据：`tasks/evidence/P1-FEAT-20261109-104805-mcp-gateway-service/rv-2-remote-connection.txt`；`kc evidence check` item 2 PASSED）
+- [x] The actual MCP process is started through just mcp-up, /ready checks its own database, and the independent image builds with just mcp-docker-build.（证据：`just mcp-docker-build` 成功；`just mcp-up` 将 `mcp-service` 与 `mcp-postgres` 启动到 healthy；`curl http://127.0.0.1:18092/ready` 返回 `{"status":"ready","checks":{"database":"ok"}}`；验证使用临时隔离 Nacos 组，结束后已删除）
+- [x] All R2/R3 evidence is tied to the final Git tree and rerun after any affected implementation change.（证据：rv-1/rv-2/rv-3 在最终代码状态重跑；`kc evidence check` 3/3 PASSED）
 
 #### Delivery Readiness
 
-- [ ] The delivering PR carries the §9.1 API-contract review surface and the §9.2 evidence package; if no PR is created, the completion message presents the Section 9.1 surface and evidence summary.
-- [ ] No unresolved executor-owned acceptance item or rollout blocker remains; no source change is made outside rust-study.
+- [~] The delivering PR carries the §9.1 API-contract review surface and the §9.2 evidence package; if no PR is created, the completion message presents the Section 9.1 surface and evidence summary. — runner-owned gate: runner PR publication（无 PR 时由执行侧完成消息呈递 §9.1 与证据摘要）
+- [x] No unresolved executor-owned acceptance item or rollout blocker remains; no source change is made outside rust-study.（证据：所有执行侧验收项已勾选；仅 3 项 Human-Confirmed 保留待人工；改动仅在本工作树与本地临时验证环境）
 
 ## 10. Functional Requirements
 
@@ -505,7 +517,39 @@ Reviewer: human evidence is limited to the service scope and API contract. Revie
 
 ### Final Reconciliation
 
-- Implementation against approved interpretation: pending implementation.
-- Evidence against final tree: pending implementation.
-- Independent verifier verdict: pending implementation.
-- Acceptance Status Banner: ⬜ 未开工.
+- Interpretation: FR-1 至 FR-6 已按 §1 解读与决策 D-01～D-03 实现：独立 `services/mcp` 服务拥有自己的 PostgreSQL 库、迁移、镜像与二进制；消费方 Bearer + 短时签名用户上下文；仅提供连接管理与 Streamable HTTP 网关，不含市场目录或消费方 UI。实现使用运行时 SQL（无 `.sqlx/` 编译期元数据），MCP Compose 秘密在 `compose-config` 中保持可选、由服务启动时 fail-fast 校验。
+- Public behavior and contracts: 管理 REST 路径、错误码与 `/mcp` Streamable HTTP 网关由 `services/mcp/openapi.yaml` 与 `docs/guides/mcp-service.md` 一致描述；rv-1/rv-2/rv-3 通过真实入口核对授权、凭据写入不可读、出站安全、进程重启后的调用与契约范围。变更树与 Change Log 已记录运行时 SQL、Compose 键白名单与依赖守卫登记。
+- Related PRD status: 无上游 PRD 依赖；Agent 服务文档仅作架构参考，未修改其代码或契约。
+- Requirements and risks: 凭据写入后不可读、endpoint 在写入与消费两条路径都重新校验、单条上游失败隔离与同名工具前缀消歧均有真实入口或 core 测试证据。已知限制：MCP 数据卷不包含在默认三库备份命令中，需按 `docs/guides/deployment.md` 单独备份；真实部署仍需运维在 Nacos 中提供 MCP 三项秘密。
+- Validation blocker: 无。所有执行侧验证均已在本机真实入口完成。
+- Validation follow-up: 3 项 Human-Confirmed 待人工验收；独立 verifier 结论由 runner 在归档门禁中给出。
+- Acceptance Status Banner: 🧍 待人工验收。
+
+## 14. Change Log
+
+### 2026-11-09 · 运行时 SQL 与 MCP Compose 接入修正
+
+- 类型：实现与范围对齐
+- 原文：§7.2 计划 `services/mcp/.sqlx/` 编译期查询元数据；`compose-config` 的受限 Properties 白名单不含 MCP 键，导致文档中的 `just mcp-up` 在提供 MCP 配置时会被拒绝。
+- 变更后：服务使用运行时 SQL，不生成 `.sqlx/`，并从变更树移除该条目；`compose-config` 允许并透传 `MCP_DB_PASSWORD`、`MCP_CREDENTIAL_KEY_BASE64`、`MCP_CONSUMERS_JSON`、`MCP_PORT`，`MCP_PORT` 参与端口校验；MCP 三项秘密不加入必填校验，缺失时由 `mcp-service` 启动失败；变更树补充 `compose_config.rs`、`compose.rs`、`scripts/mcp-e2e.sh`、`docs/guides/configuration.md` 与 `docs/guides/deployment.md`。
+- 原因：运行时 SQL 避免维护服务私有的编译期查询元数据；白名单缺失使已文档化的 `just mcp-up` 入口不可用，必须在交付前修复。
+- 影响：仅影响 MCP 服务及其 Compose 配置入口；其他服务行为不变；MCP 秘密未配置时 Compose 仍可解析，服务按既有设计明确启动失败。
+- 审核：执行侧自检；`cargo test -p tpl-infrastructure`、`just ci`、`just mcp-up` 后的 `/ready` 均通过。
+
+### 2026-11-09 · 全仓依赖守卫登记 MCP 层
+
+- 类型：测试与架构守卫
+- 原文：`services/accounts/tests/architecture.rs` 未登记 `mcp-*` 层，`just test` 在新增服务后失败。
+- 变更后：在允许依赖名单与负控构造中登记 `mcp-core`、`mcp-api`、`mcp-infrastructure`、`mcp`，与 `services/mcp/tests/architecture.rs` 的规则一致。
+- 原因：新增独立服务必须纳入全仓依赖方向守卫，否则跨服务私有 crate 引用不会被拦住。
+- 影响：扩展 CI 守卫覆盖到 MCP 层；无运行时行为变化。
+- 审核：执行侧自检；`just test` 与 `just ci` 通过。
+
+### 2026-11-09 · 验收清单与证据收口
+
+- 类型：验收记录
+- 原文：横幅为“未开工”，§9 执行侧项未勾选，缺少 Final Reconciliation 与 Change Log。
+- 变更后：按最终代码树的证据勾选全部执行侧项，runner-owned 的 PR 呈递项改为 `[~]`，保留 3 项 Human-Confirmed 未勾选；横幅改为“待人工验收”；补充 Final Reconciliation；rv-1/rv-2/rv-3 在最终状态重跑并记录 `kc evidence check` 3/3。
+- 原因：交付门禁要求验收清单、横幅、Final Reconciliation 与证据保持一致。
+- 影响：仅验收记录与状态；不改变实现、范围或任何 Human-Confirmed 项。
+- 审核：执行侧自检；Human-Confirmed 待用户本人确认，未代勾。

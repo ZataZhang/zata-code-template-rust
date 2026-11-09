@@ -119,3 +119,9 @@ adapter_kind = "sandbox"
 enabled = true
 allowed_tools = ["text.summarize", "artifact.write", "delegate_task"]
 max_steps = 8
+
+# -----------------------------------------------------------------------------
+# MCP 服务（services/mcp，独立进程 mcp-service，默认端口 8092）
+# -----------------------------------------------------------------------------
+# MCP 服务不读取本文件：配置在 services/mcp/config.toml，秘密使用独立的 MCP_* 环境变量。
+# 它与 accounts / Agent 不共享数据库、凭据或密钥；部署与本地启动见 docs/guides/mcp-service.md。

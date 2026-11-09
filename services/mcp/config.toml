@@ -1,0 +1,43 @@
+# MCP 服务运行配置（非敏感默认值）。
+#
+# 加载优先级：代码默认值 < 本文件 < APP_MCP__<分区>__<字段> 环境变量。
+# 本服务拥有独立数据库与凭据，不读取仓库根配置或 Nacos。
+#
+# 以下秘密只能由部署平台或仓库根 .env.local 注入，不要写进本文件：
+#   MCP_DATABASE_URL           MCP 专属 PostgreSQL 连接串
+#   MCP_CREDENTIAL_KEY_BASE64  AES-256-GCM 主密钥（标准 Base64 的 32 字节）
+#   MCP_CONSUMERS_JSON         消费服务清单 [{"consumer_id","token","context_signing_secret"}]
+
+[server]
+host = "127.0.0.1" # 容器里由 Compose 覆盖为 0.0.0.0
+port = 8092
+
+[logging]
+# RUST_LOG 优先于这里的 level。
+level = "info"
+format = "text" # "text"（本地阅读）或 "json"（日志采集）
+
+[database]
+# url 只通过 MCP_DATABASE_URL 注入，避免连接串进入配置文件。
+max_connections = 10
+acquire_timeout_secs = 3
+
+[security]
+# 用户上下文只接受配置内消费方用 context_signing_secret 签名的短期声明。
+context_issuer = "tpl-consumer-backend"
+context_audience = "tpl-mcp-gateway"
+context_max_age_secs = 300
+context_clock_skew_secs = 30
+# 仅本地测试远端 MCP server 时临时设为 true；生产必须保持 false。
+allow_insecure_loopback = false
+
+[outbound]
+connect_timeout_ms = 5000
+request_timeout_ms = 15000
+max_response_bytes = 1048576 # 1 MiB
+max_tools_per_connection = 256
+
+[gateway]
+# 允许的 Host 头；空列表表示关闭校验，只应在受控代理之后使用。
+allowed_hosts = ["localhost", "127.0.0.1", "::1"]
+max_request_body_bytes = 1048576 # 1 MiB

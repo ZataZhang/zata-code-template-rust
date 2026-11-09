@@ -5,7 +5,7 @@ use std::net::IpAddr;
 
 use super::ComposeEnvironment;
 
-const ALLOWED_KEYS: [&str; 18] = [
+const ALLOWED_KEYS: [&str; 22] = [
     "POSTGRES_PASSWORD",
     "REDIS_PASSWORD",
     "AGENT_TRACING_DB_PASSWORD",
@@ -23,6 +23,10 @@ const ALLOWED_KEYS: [&str; 18] = [
     "ADMIN_PORT",
     "TRACING_UI_PORT",
     "ACCOUNTS_PORT",
+    "MCP_DB_PASSWORD",
+    "MCP_CREDENTIAL_KEY_BASE64",
+    "MCP_CONSUMERS_JSON",
+    "MCP_PORT",
     "LOG_FORMAT",
 ];
 
@@ -116,7 +120,13 @@ pub(super) fn parse_properties(
 fn validate_typed_values(
     environment_variables: &BTreeMap<String, String>,
 ) -> Result<(), ComposePropertiesError> {
-    for key in ["WEB_PORT", "ADMIN_PORT", "TRACING_UI_PORT", "ACCOUNTS_PORT"] {
+    for key in [
+        "WEB_PORT",
+        "ADMIN_PORT",
+        "TRACING_UI_PORT",
+        "ACCOUNTS_PORT",
+        "MCP_PORT",
+    ] {
         if let Some(value) = environment_variables.get(key)
             && value.parse::<u16>().map_or(true, |port| port == 0)
         {
@@ -302,6 +312,29 @@ mod tests {
             environment_variables.get("WEB_PORT").map(String::as_str),
             Some("3000")
         );
+    }
+
+    #[test]
+    fn mcp_values_are_allowed_even_though_only_the_mcp_profile_uses_them() {
+        let required = "POSTGRES_PASSWORD=pg\nREDIS_PASSWORD=redis\nAGENT_TRACING_DB_PASSWORD=trace\nAGENT_DB_PASSWORD=agentdb\nAGENT_WEB_SERVICE_TOKEN=webtoken\nAGENT_ADMIN_SERVICE_TOKEN=admintoken\nAGENT_TRACING_PRODUCER_TOKEN=producertoken\n";
+        let environment_variables = parsed_values(&format!(
+            "{required}MCP_DB_PASSWORD=mcp-secret\nMCP_CREDENTIAL_KEY_BASE64=dmFsaWQta2V5\nMCP_CONSUMERS_JSON=[{{\"service_id\":\"web\",\"token\":\"token\",\"signing_secret\":\"secret\"}}]\nMCP_PORT=8092\n"
+        ));
+        assert_eq!(
+            environment_variables
+                .get("MCP_DB_PASSWORD")
+                .map(String::as_str),
+            Some("mcp-secret")
+        );
+        assert_eq!(
+            environment_variables.get("MCP_PORT").map(String::as_str),
+            Some("8092")
+        );
+
+        assert!(matches!(
+            parse_properties(&format!("{required}MCP_PORT=0\n")),
+            Err(ComposePropertiesError::InvalidTypedValue { key: "MCP_PORT" })
+        ));
     }
 
     #[test]

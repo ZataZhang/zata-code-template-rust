@@ -8,7 +8,7 @@
 
 ## 当前服务边界
 
-`services/accounts/` 与 `services/agent-tracing/` 是当前两个业务服务与 composition root（分别为 `accounts-service` 与 `agent-tracing-service`）。两个服务拥有独立配置、迁移、数据库与 Docker 镜像。`services/accounts/crates/*` 和 `services/agent-tracing/crates/*` 都是各自私有层，不是供其他业务模块依赖的通用库；tracing 通过 accounts 的公开管理员认证 HTTP 接口校验 Cookie，不访问 accounts 数据库或 Redis。
+`services/accounts/`、`services/agent/`、`services/agent-tracing/` 与 `services/mcp/` 是当前业务服务与 composition root（分别为 `accounts-service`、`agent-service`、`agent-tracing-service` 与 `mcp-service`）。每个服务拥有独立配置、迁移、数据库与 Docker 镜像。`services/accounts/crates/*`、`services/agent/crates/*`、`services/agent-tracing/crates/*` 与 `services/mcp/crates/*` 都是各自私有层，不是供其他业务模块依赖的通用库；tracing 通过 accounts 的公开管理员认证 HTTP 接口校验 Cookie，不访问 accounts 数据库或 Redis；MCP 服务只消费消费项目后端携带的签名用户上下文，不读取 accounts 或其他服务数据库。
 
 ## 新服务目录约定
 
@@ -35,7 +35,7 @@
 **依赖向内：外层可以依赖 `tpl-core`，`tpl-core` 不能依赖任何外层。** 依赖关系写在各 crate 的 `Cargo.toml` 里，有两道防线：
 
 1. **Cargo**：没声明的依赖就 `use` 不了；
-2. **守卫测试** `services/accounts/tests/architecture.rs`：读取 `cargo metadata`，按服务名区分业务服务私有层，并检查 `platform/` 下的共享平台 crate，断言依赖符合允许名单并拒绝跨服务 crate 依赖。只靠第 1 道不够——有人把违规依赖写进 `Cargo.toml`，照样能编译通过。
+2. **守卫测试** `services/accounts/tests/architecture.rs`、`services/agent/tests/architecture.rs` 与 `services/mcp/tests/architecture.rs`：读取 `cargo metadata`，按服务名区分业务服务私有层，并检查 `platform/` 下的共享平台 crate，断言依赖符合允许名单并拒绝跨服务 crate 依赖。只靠第 1 道不够——有人把违规依赖写进 `Cargo.toml`，照样能编译通过。
 
 因此不需要 Python 版那种逐文件扫描 import 的脚本，但这一个测试要保留。它失败时修 `Cargo.toml`，不要改测试；只有约定本身变更时才改它的名单，并同步更新本页。新增 crate 时必须同时登记到名单里，否则测试会失败。
 
@@ -51,6 +51,11 @@ tpl-agent-tracing-api             → tpl-agent-tracing-core
 tpl-agent-tracing-infrastructure  → tpl-agent-tracing-core
 tpl-agent-tracing                 → 自己的各层（唯一装配根）
 
+tpl-mcp-core             → （无）
+tpl-mcp-api              → tpl-mcp-core
+tpl-mcp-infrastructure   → tpl-mcp-core
+tpl-mcp                  → 自己的各层（唯一装配根）
+
 accounts-infrastructure           → tpl-core + tpl-platform-oss（仅在业务需要时）
 agent-tracing-infrastructure      → tpl-agent-tracing-core + tpl-platform-oss（仅在业务需要时）
 tpl-platform-oss                   → 不依赖任何业务服务
@@ -65,7 +70,7 @@ tpl-platform-oss                   → 不依赖任何业务服务
 - 跨层协作一律经由 `tpl-core` 里的端口（trait）
 - 未来业务服务不得依赖 `tpl-api` / `tpl-core` / `tpl-infrastructure` 等账号私有 crate；跨业务复用须提取与账号域无关的契约或平台 crate
 - 共享平台 crate 放在 `platform/`，仅 infrastructure 层可以依赖；平台 crate 不得依赖任何业务服务
-- 各服务只能依赖自身带服务前缀的私有层；例如 tracing 只依赖 `tpl-agent-tracing-*`，账号与 tracing 之间只走公开 HTTP 契约
+- 各服务只能依赖自身带服务前缀的私有层；例如 tracing 只依赖 `tpl-agent-tracing-*`，MCP 只依赖 `tpl-mcp-*`，服务之间只走公开 HTTP 契约
 
 > 与 Python 版模板的差异：Python 版规则写着「infrastructure 不得导入 core」，靠的是 Python 的结构化类型（Protocol 鸭子类型）让基础设施不 import 就能满足 core 的接口。Rust 的 trait 必须显式 `impl`，实现方必须依赖定义 trait 的 crate，所以这里采用标准的 Clean Architecture 方向：所有外层依赖 core。
 

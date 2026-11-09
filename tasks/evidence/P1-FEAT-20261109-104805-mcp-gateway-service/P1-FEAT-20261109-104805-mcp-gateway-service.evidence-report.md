@@ -1,0 +1,100 @@
+# MCP Gateway 服务验收证据报告
+
+## 人审导航 / Human Review Navigation
+
+本 PRD 的人审呈递区（§9.1）是服务范围与 API 契约；审查对象是仓库内文档与 OpenAPI，不涉及页面截图。
+
+| 呈递 | 绝对路径 | 打开命令 | 期望值 | 执行侧交叉核对 |
+|---|---|---|---|---|
+| MCP 服务指南 | `/Users/zata/code/rust-study/.kc-worktrees/issue-4/docs/guides/mcp-service.md` | `open "/Users/zata/code/rust-study/.kc-worktrees/issue-4/docs/guides/mcp-service.md"` | 范围与 API 两节列出连接管理、用户/分组授权、连接检查与 `/mcp` Streamable HTTP 网关，并明确排除公开 MCP 市场与消费方 UI | `rv-3-docs-scope.txt` 已校验 API 路径、`/mcp` 与排除项关键词 |
+| API 契约 | `/Users/zata/code/rust-study/.kc-worktrees/issue-4/services/mcp/openapi.yaml` | `open "/Users/zata/code/rust-study/.kc-worktrees/issue-4/services/mcp/openapi.yaml"` | `paths` 包含 7 条 `/api/v1/connections...` 管理路径与 `POST /mcp`，错误码与鉴权说明完整 | 与 `services/mcp/crates/api/src/routes/*.rs` 逐路径比对一致；运行中服务 `GET /openapi.yaml` 返回同一契约 |
+
+本项没有仍需要人审的静态图片；审查按上表直接打开最终树中的 Markdown 与 YAML。PR 由 runner 创建，此处暂无 PR/CI 链接。
+
+## 1. 结论
+
+- §9 全部执行侧验收项已由最终代码状态的真实入口证据覆盖；仅 3 项 Human-Confirmed 保留待人工确认，未代勾。
+- `kc evidence check --evidence tasks/evidence/P1-FEAT-20261109-104805-mcp-gateway-service`：3/3 PASSED。
+- `just test`、`just ci`、`just test real`、`just mcp-docker-build` 均 exit 0；`just mcp-up` 启动成功，`/ready` 返回数据库 `ok`。
+
+## 2. 最终代码状态
+
+| 字段 | 值 |
+|---|---|
+| HEAD | `7be157439c698e75e0e821fe30693857338aa530` |
+| 工作树指纹（sha256） | `033eaa6078ef23465a09d5ac6e972d9f07996844e4f1edd53f0e2a27560f27c6` |
+| 指纹范围 | tracked + untracked（`git ls-files -co --exclude-standard`），排除 `tasks/evidence/**`、本 PRD 与 `.agent-runner/**` 等记录路径 |
+| 参与文件数 | 583 |
+| Rust / Cargo | 1.99.0 / 1.99.0 |
+| Docker | 29.4.2 |
+| 记录时间（UTC） | 2026-11-09T04:34:07Z |
+
+证据文件在最终代码状态重跑后生成，摘要如下：
+
+| 证据文件 | SHA-256 |
+|---|---|
+| `rv-1-authorization.txt` | `4bfdb1f6711dc9c8fc9dc428506e07bdc1e18ad8b3590dd7035746ffa1bd38df` |
+| `rv-2-remote-connection.txt` | `1df7328349c45c15e2e65dc591dfd4ba1897b24c33a254e976ee7856c4e82205` |
+| `rv-3-docs-scope.txt` | `0da38920845ad099f72cce65bde234151c821879925b7edbbf3e685974a83039` |
+
+## 3. rv-1：授权与租户隔离
+
+- 命令：`bash tasks/evidence/P1-FEAT-20261109-104805-mcp-gateway-service/scripts/rv-1-authorization.sh`
+- 入口：`just mcp-e2e --scenario authorization`，真实 `mcp-service` 进程 + 真实 PostgreSQL 迁移 + 真实 HMAC 签名上下文 + 真实 rmcp 网关/客户端。
+- 关键检查点：
+  - 无认证请求返回 401。
+  - 管理员通过 REST 创建连接并授权 `user-allowed`。
+  - 获准用户 `tools/list` 只看到带连接前缀的 `lookup_weather`，`tools/call` 返回上游结果。
+  - 同租户未授权用户与另一租户同名用户的 `tools/list` 为空，`tools/call` 返回 `-32003` / HTTP 403。
+  - 服务日志不含工具参数或工具结果。
+- 负控：测试边界临时把未授权用户断言反转为“必须看到工具”，实际失败为 `assertion failed`、`test result: FAILED`、退出码 101；恢复后同一条命令变绿。
+- 限制：远端 provider 为本地 fake，未覆盖真实第三方网络的 TLS/证书差异。
+
+## 4. rv-2：连接管理、加密凭据、出站安全与重启
+
+- 命令：`bash tasks/evidence/P1-FEAT-20261109-104805-mcp-gateway-service/scripts/rv-2-remote-connection.sh`
+- 入口：`just mcp-e2e --scenario remote-connection`。
+- 关键检查点：
+  - 生产安全策略在写入阶段拒绝 loopback endpoint，假上游请求计数保持 0。
+  - 私网 `http://10.0.0.1/mcp` 在写入阶段返回 400 `unsafe_endpoint`。
+  - 创建响应只包含 `credential_configured=true`，不返回凭据明文。
+  - PostgreSQL 中只保存 57 字节密文，且不含凭据明文。
+  - 管理 API 通过真实 rmcp 握手发现 `lookup_weather`。
+  - 服务进程重启后，新进程从同一数据库读取连接、解密凭据，并由新 MCP 客户端完成 `tools/list` 与 `tools/call`。
+  - 两次进程日志均不含凭据、工具参数或工具结果。
+- 负控：测试边界把 loopback 拒绝的期望状态从 400 改为 201，实际失败为 `left: 400`、`right: 201`、`test result: FAILED`、退出码 101；恢复后同一条命令变绿。
+- 限制：上游为本地 fake；未验证真实外部 provider 的网络差异与主密钥轮换后的旧密文行为。
+
+## 5. rv-3：发布契约范围审查
+
+- 命令：`bash tasks/evidence/P1-FEAT-20261109-104805-mcp-gateway-service/scripts/rv-3-docs-scope.sh`
+- 关键检查点：
+  - OpenAPI 包含 8 条必需路径（连接 CRUD、停用、凭据、工具检查、授权、`/mcp`）。
+  - 路由器的 7 条 `/api/v1/connections...` 路径与 OpenAPI 管理路径完全一致，`/mcp` 由 `nest_service("/mcp")` 挂载。
+  - 指南显式覆盖连接管理、凭据与 `/mcp`。
+  - 指南显式排除公开 MCP 市场、消费方 UI、`stdio`、HTTP+SSE 与 `prompts`/`resources`。
+- 负控：临时从 OpenAPI 删除 `/mcp` 后，脚本输出 `失败：OpenAPI 缺少路径 /mcp` 并以非零退出；恢复后变绿。
+- 限制：自动化只核对路径、方法与关键词，文档措辞清晰度由人工 reviewer 判断。
+
+## 6. 构建与部署验证
+
+| 检查 | 结果 |
+|---|---|
+| `just test` | exit 0（2026-11-09，最终树） |
+| `just ci` | exit 0（fmt + clippy `-D warnings` + 全量测试 + `cargo doc -D warnings`） |
+| `just test real` | exit 0；`tpl-mcp` 的 `real_authorization_scenario`、`real_remote_connection_scenario` 均通过；缺少 `TEST_MCP_DATABASE_URL` 时测试 `expect` 失败而非静默跳过 |
+| `just mcp-docker-build` | 成功构建 `tpl-mcp:local` |
+| `just mcp-up` | `mcp-service` 与 `mcp-postgres` 启动至 healthy |
+| `curl http://127.0.0.1:18092/ready` | `{"status":"ready","checks":{"database":"ok"}}` |
+| `curl http://127.0.0.1:18092/live` | `{"status":"ok"}` |
+
+Compose 验证说明：共享开发 Nacos 缺少与本服务无关的 Agent/tracing 必填键，为使已文档化的 `just mcp-up` 在完整 Compose 文件插值下可执行，验证时向本地 Nacos 发布了一个临时隔离组（包含随机测试值）；验证后已删除该临时组与本地临时配置文件，未修改现有配置。MCP 三项秘密在 `compose-config` 中保持可选，缺失时由服务启动失败。
+
+## 7. 变更与限制披露
+
+- 实现使用运行时 SQL，无 `services/mcp/.sqlx/`；PRD 变更树已同步并在 Change Log 记录。
+- `compose-config` 原先不识别 MCP 键，`just mcp-up` 无法使用；已补充 `MCP_DB_PASSWORD`、`MCP_CREDENTIAL_KEY_BASE64`、`MCP_CONSUMERS_JSON`、`MCP_PORT` 白名单与 `MCP_PORT` 校验，并保持 MCP 秘密非必填。
+- 全仓依赖守卫原先未登记 `mcp-*` 层，`just test` 失败；已登记并通过。
+- 未连接真实第三方 MCP provider；外部网络、TLS 与供应商差异不在本机证据范围内。
+- 未创建 PR；独立 verifier 结论与 PR 呈递由 runner 完成。
+- 3 项 Human-Confirmed 保持未勾选，等待用户本人审阅 §9.1 呈递与服务范围。

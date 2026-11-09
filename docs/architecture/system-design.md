@@ -1,6 +1,6 @@
 # 系统架构
 
-本仓库提供三个可独立部署的后端微服务：`accounts-service`、`agent-service` 与 `agent-tracing`。账号服务负责认证与管理员身份；Agent 服务拥有组织目录、Runtime、Business Agent、Session 与 Canonical Run，并通过 HTTP 调用 accounts 校验用户/管理员身份；tracing 服务独立接收 Agent 事件、保存轨迹并提供管理员查询。三者各自拥有数据、迁移和配置，后两个服务都不依赖账号私有领域实现。
+本仓库提供四个可独立部署的后端微服务：`accounts-service`、`agent-service`、`agent-tracing` 与 `mcp-service`。账号服务负责认证与管理员身份；Agent 服务拥有组织目录、Runtime、Business Agent、Session 与 Canonical Run，并通过 HTTP 调用 accounts 校验用户/管理员身份；tracing 服务独立接收 Agent 事件、保存轨迹并提供管理员查询；MCP 服务管理远端 MCP 连接、凭据与用户/分组授权，并暴露聚合 Streamable HTTP 网关。四者各自拥有数据、迁移和配置，后三个服务都不依赖账号私有领域实现。
 
 Cargo workspace 是单仓管理多个独立产物的方式：`services/accounts` 是账号服务 composition root；当前 `services/accounts/crates/*` 都是账号服务私有实现。前后端可经同源 nginx 路由接入账号服务。跨应用复用有两种部署选择：每个应用独立部署账号服务并配置自己的数据库/Redis；或明确选择共享同一账号域。当前没有 `tenant_id` / `app_id` 隔离，不能把共享实例视为彼此隔离的多租户账号系统。
 
@@ -8,7 +8,7 @@ Cargo workspace 是单仓管理多个独立产物的方式：`services/accounts`
 
 ### 设计范围与当前状态
 
-采用单仓 Cargo workspace 管理多个独立业务服务。`services/accounts/`、`services/agent/` 与 `services/agent-tracing/` 分别是独立 composition root；账号服务内部 package 放在 `services/accounts/crates/`，Agent 私有 package 放在 `services/agent/crates/`，tracing 私有 package 放在 `services/agent-tracing/crates/`。以下约定继续适用于后续新增业务服务。
+采用单仓 Cargo workspace 管理多个独立业务服务。`services/accounts/`、`services/agent/`、`services/agent-tracing/` 与 `services/mcp/` 分别是独立 composition root；账号服务内部 package 放在 `services/accounts/crates/`，Agent 私有 package 放在 `services/agent/crates/`，tracing 私有 package 放在 `services/agent-tracing/crates/`，MCP 私有 package 放在 `services/mcp/crates/`。以下约定继续适用于后续新增业务服务。
 
 当前优先保留已运行的账号边界；只有实际业务需要独立数据所有权、发布节奏或运行资源时才新增服务。注册、登录、管理员和用户管理继续属于账号服务。不要按 HTTP 端点、数据库表或技术层拆进程。一次请求必须跨多个服务才能完成的强一致业务，应先评估是否属于同一服务。
 
@@ -43,6 +43,19 @@ services/
       infrastructure/             # 配置、PostgreSQL、Blob、身份客户端、outbox
     migrations/
     tests/                        # 真实装配、HTTP 入口与依赖边界验证
+    openapi.yaml
+  mcp/                            # MCP 装配根、私有层、迁移、测试、OpenAPI
+    Cargo.toml                    # package tpl-mcp；bin mcp-service
+    src/
+      main.rs
+      composition.rs              # 配置、PostgreSQL、加密、出站策略与 HTTP 装配
+    crates/
+      core/                       # 连接/授权用例、端口、签名上下文与工具命名
+      api/                        # REST 管理路由、MCP 网关、认证中间件、DTO
+      infrastructure/             # 配置、PostgreSQL、AES-GCM、HMAC 验签、rmcp 出站
+    migrations/
+    tests/                        # 真实 PostgreSQL/进程端到端与依赖边界验证
+    config.toml                   # 服务私有配置，秘密只从环境注入
     openapi.yaml
   <service>/                      # 以下为未来服务模板
     Cargo.toml                    # package tpl-<service>，独立二进制
@@ -79,7 +92,7 @@ platform/                         # 无业务归属的共享平台 crate
 
 包名使用业务前缀，例如 `tpl-orders-core`，避免多个服务都叫 `tpl-core`。`engines` 只在确有平台能力适配需求时增加。Rust 模块不需要独立的 `Cargo.toml`；只有独立 package 才需要清单。
 
-当前 workspace 成员是 `platform/*`、`services/*`、`services/accounts/crates/*`、`services/agent/crates/*`、`services/agent-tracing/crates/*`、`tools/*` 和 `examples/agent-business-service`。新增服务及其私有 package 时，在根 `Cargo.toml` 显式登记对应路径。依赖版本仍由根 `[workspace.dependencies]` 管理，每个服务单独选择依赖。
+当前 workspace 成员是 `platform/*`、`services/*`、`services/accounts/crates/*`、`services/agent/crates/*`、`services/agent-tracing/crates/*`、`services/mcp/crates/*`、`tools/*` 和 `examples/agent-business-service`。新增服务及其私有 package 时，在根 `Cargo.toml` 显式登记对应路径。依赖版本仍由根 `[workspace.dependencies]` 管理，每个服务单独选择依赖。
 
 新服务内部依赖关系：
 
@@ -97,7 +110,7 @@ platform-<capability>  → 不依赖任何业务服务
 
 ### 数据与事务
 
-每个服务拥有自己的表、迁移和数据库凭据。初期可以共用 PostgreSQL 实例，但使用独立数据库与权限；其他服务不得跨库查询、建立跨服务外键或执行其迁移。业务记录可保存账号服务返回的用户 ID，账号存在性与状态通过公开 API 确认。Agent 服务使用独立 `agent` 数据库保存组织、Agent、Session/Run/事件、outbox 与元数据，用户资源、Skill 资产和 Run 产物正文放在独立 Blob 卷，不进入 PostgreSQL 或其它服务。
+每个服务拥有自己的表、迁移和数据库凭据。初期可以共用 PostgreSQL 实例，但使用独立数据库与权限；其他服务不得跨库查询、建立跨服务外键或执行其迁移。业务记录可保存账号服务返回的用户 ID，账号存在性与状态通过公开 API 确认。Agent 服务使用独立 `agent` 数据库保存组织、Agent、Session/Run/事件、outbox 与元数据，用户资源、Skill 资产和 Run 产物正文放在独立 Blob 卷，不进入 PostgreSQL 或其它服务。MCP 服务使用独立 `mcp` 数据库保存连接、密文凭据与用户/分组授权；凭据明文没有数据库列，外部用户/分组 ID 是不透明字符串，不与 accounts 建立外键。
 
 Redis 可以共用实例，但服务应有独立键前缀、访问权限和容量规划；账号 Cookie、会话和限流键仍只归账号服务管理。其他服务不得解析账号 Redis。
 
@@ -115,11 +128,11 @@ Redis 可以共用实例，但服务应有独立键前缀、访问权限和容�
 
 ### 配置、运行与发布
 
-每个服务独立读取配置、注入密钥、构建镜像和发布。账号服务与 Agent 服务都读取根 `config.toml`（Agent 只读 `[agent]` 子树），Agent 的数据库连接由独立的 `DATABASE_URL` 或 Nacos `agent.database.url` 提供；Agent tracing 使用 `services/agent-tracing/config.toml` 和独立的数据库连接配置。任何服务不能隐式读取账号数据库连接串。根 Compose 组合三个后端服务、三套 PostgreSQL、Redis 与三个独立前端：`agent-service` 使用独立 `agent` 数据库和 Blob 卷；public 站点与 admin nginx 在服务端注入 Agent 调用凭据；tracing UI 的 nginx 按路径代理管理员认证、轨迹查询和 producer 写入请求。
+每个服务独立读取配置、注入密钥、构建镜像和发布。账号服务与 Agent 服务都读取根 `config.toml`（Agent 只读 `[agent]` 子树），Agent 的数据库连接由独立的 `DATABASE_URL` 或 Nacos `agent.database.url` 提供；Agent tracing 使用 `services/agent-tracing/config.toml` 和独立的数据库连接配置；MCP 使用 `services/mcp/config.toml` 与 `MCP_DATABASE_URL`、`MCP_CREDENTIAL_KEY_BASE64`、`MCP_CONSUMERS_JSON`，不读取根配置或 Nacos 应用配置。任何服务不能隐式读取账号数据库连接串。根 Compose 组合三个默认后端服务、三套 PostgreSQL、Redis 与三个独立前端：`agent-service` 使用独立 `agent` 数据库和 Blob 卷；public 站点与 admin nginx 在服务端注入 Agent 调用凭据；tracing UI 的 nginx 按路径代理管理员认证、轨迹查询和 producer 写入请求。MCP 服务与其 PostgreSQL 位于 Compose 的 `mcp` profile，由 `just mcp-up` 单独启用，不改变默认整站启动范围。
 
 根 Compose 负责组合本地整站，服务可以单独启动其必要依赖。初期继续使用 Compose 网络 DNS 与现有 nginx，无需预先引入注册中心、专用 API 网关、Kubernetes 或服务网格。每个服务提供 `/live` 与 `/ready`、优雅退出、结构化日志；增加第二个服务的跨服务调用时同步贯通请求关联 ID，并确保凭据不进入日志。Agent 的 `/ready` 检查自身 PostgreSQL；tracing 故障不改变它的就绪状态。
 
-CI 可统一触发，但必须能够按 package 构建、按服务生成镜像和选择发布目标；同一 workspace 不要求所有服务同时部署。SQLx 离线元数据按服务维护，新服务的 Docker/CI 必须明确从该服务目录读取对应元数据，不能误用根目录的账号元数据。实际 SQLx 配置方式在新增服务时验证并记录。
+CI 可统一触发，但必须能够按 package 构建、按服务生成镜像和选择发布目标；同一 workspace 不要求所有服务同时部署。SQLx 离线元数据按服务维护，新服务的 Docker/CI 必须明确从该服务目录读取对应元数据，不能误用根目录的账号元数据。实际 SQLx 配置方式在新增服务时验证并记录。MCP 服务当前使用运行时 SQL 查询，不维护 `.sqlx/` 元数据；接入编译期查询宏时再按该约定补充。
 
 ### 新增服务的执行步骤
 
@@ -215,6 +228,16 @@ Run 管线：public 用户发送消息后，服务在本地事务写入 Run（�
 事件与 tracing：Run 事件从 1 开始持久单调编号，SSE 与 outbox 共用同一事实源。SSE 事件的 `data` 是完整 `RunEvent`（`run_id`、`seq`、`event_type`、`occurred_at`、`payload`），客户端可按 `after_seq` 续读。outbox worker 只发送白名单事件类型与低敏字段，凭据/提示词正文/工具参数按契约被拒绝或脱敏为 `[已脱敏]`，按批次与字节上限投递到 agent-tracing producer；失败按退避重试，不直接写 tracing 数据库。
 
 维护细节、配置键与错误码见 [`docs/guides/agent-service.md`](../guides/agent-service.md)。
+
+## MCP 服务（`services/mcp`）
+
+独立二进制 `mcp-service`，默认监听 8092，是远端 MCP 连接、凭据与租户级用户/分组授权的唯一服务入口。内部 package：`tpl-mcp-core`（连接与授权用例、端口、签名身份、工具命名，不依赖其它内部 crate）、`tpl-mcp-api`（REST 管理路由、MCP Streamable HTTP 网关、认证中间件与 DTO）、`tpl-mcp-infrastructure`（配置、PostgreSQL 仓储、AES-256-GCM 凭据加密、HMAC 调用方验签、rmcp 出站传输与地址策略）。装配根是 `services/mcp`。
+
+数据所有权：连接元数据、密文凭据、用户/分组授权都在独立 `mcp` 数据库；凭据明文没有数据库列。外部 `tenant_id`、`subject_id` 与分组 ID 是不透明字符串，不读取 accounts 或其他服务数据库，也不建立跨库外键。管理接口要求签名上下文中的 `admin` 角色；网关接受 `user` 与 `admin`，并在 `tools/list` 与 `tools/call` 两个入口按租户、用户和分组重新校验授权。
+
+调用方身份：消费项目后端携带自己的 Bearer 服务 token 与短期 HMAC-SHA-256 签名用户上下文；服务内部遍历全部消费方做常量时间 token 比较，再校验签名、issuer/audience、有效期与 consumer 绑定。浏览器永远不持有这些凭据。出站只允许 HTTPS 公网地址（loopback HTTP 需显式开发开关），拒绝重定向、私网、链路本地、保留与云元数据地址，并设置连接/请求超时与响应大小上限。
+
+发布边界：MCP 服务不依赖 accounts / Agent 的私有 crate，不进入默认整站启动；根 Compose 的 `mcp` profile 与 `just mcp-up` 单独构建、启动和停止它，回滚不影响其他服务。详细配置、API、网关行为与明确的非目标见 [`docs/guides/mcp-service.md`](../guides/mcp-service.md)，HTTP 契约见 [`services/mcp/openapi.yaml`](../../services/mcp/openapi.yaml)。
 
 ## 一个请求怎么走：`GET /ready`
 

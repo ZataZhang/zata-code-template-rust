@@ -1,0 +1,40 @@
+[package]
+name = "tpl-mcp-infrastructure"
+description = "MCP 服务基础设施：配置、日志、PostgreSQL、凭据加密、调用方验签与远端 MCP transport。"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+build = "build.rs"
+
+[dependencies]
+tpl-mcp-core.workspace = true
+
+aes-gcm.workspace = true
+async-trait.workspace = true
+base64.workspace = true
+dotenvy.workspace = true
+figment.workspace = true
+hmac.workspace = true
+reqwest.workspace = true
+rmcp = { workspace = true, features = ["client", "transport-streamable-http-client-reqwest"] }
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+sqlx.workspace = true
+subtle.workspace = true
+thiserror.workspace = true
+time.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+url.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+figment = { workspace = true, features = ["test"] }
+tempfile.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true

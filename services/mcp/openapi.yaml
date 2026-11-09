@@ -1,0 +1,631 @@
+openapi: 3.0.3
+info:
+  title: MCP Gateway Service API
+  version: 0.1.0
+  description: |
+    独立 MCP Gateway 微服务：管理远端 Streamable HTTP MCP 连接，按租户与用户/分组授权
+    聚合工具，并通过 `/mcp` 暴露 MCP 网关。
+
+    认证采用两层凭据，二者都必须由消费项目后端在服务端携带：
+
+    - `Authorization: Bearer <service token>`：消费服务身份；
+    - `x-user-context: <payload>.<signature>`：短期签名用户上下文，包含 tenant、
+      subject、groups 与 role，由该消费服务用 `context_signing_secret` 签名。
+
+    管理接口要求签名上下文中的 `role` 为 `admin`；MCP 网关接受 `user` 与 `admin`。
+    浏览器永远不应直接持有服务 token 或签名密钥。
+
+    本服务不提供公开市场、消费方 UI、标准输入输出 stdio transport、旧版 HTTP+SSE
+    transport，也不代理 prompts 或 resources。
+servers:
+  - url: http://127.0.0.1:8092
+    description: 默认本机监听地址（端口可由配置覆盖）
+tags:
+  - name: health
+    description: 匿名探针
+  - name: connections
+    description: 远端 MCP 连接管理与授权（需要 admin 角色）
+  - name: mcp
+    description: 聚合 Streamable HTTP MCP endpoint（需要 user 或 admin 角色）
+security:
+  - ServiceToken: []
+    UserContext: []
+paths:
+  /live:
+    get:
+      tags: [health]
+      summary: 存活探针
+      security: []
+      responses:
+        "200":
+          description: 进程存活
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LiveResponse"
+  /health:
+    get:
+      tags: [health]
+      summary: 基本信息
+      security: []
+      responses:
+        "200":
+          description: 服务标识与版本
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+  /ready:
+    get:
+      tags: [health]
+      summary: 就绪探针
+      description: 检查 MCP 专属 PostgreSQL；任一依赖失败时返回 503。
+      security: []
+      responses:
+        "200":
+          description: 依赖就绪
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessResponse"
+        "503":
+          description: 依赖未就绪
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessResponse"
+  /openapi.yaml:
+    get:
+      tags: [health]
+      summary: 本文档
+      security: []
+      responses:
+        "200":
+          description: OpenAPI 契约
+          content:
+            application/yaml:
+              schema:
+                type: string
+  /api/v1/connections:
+    get:
+      tags: [connections]
+      summary: 列出当前消费服务与租户的连接
+      responses:
+        "200":
+          description: 连接列表
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectionList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags: [connections]
+      summary: 创建连接
+      description: |
+        endpoint 在写入前经过出站地址策略校验：默认只允许 HTTPS 且拒绝 loopback、
+        私网、链路本地、组播、保留地址与云元数据地址。仅当部署显式开启
+        `allow_insecure_loopback` 时，才允许 loopback 上的 HTTP 测试 server。
+        Bearer 连接必须同时提交凭据；响应永远不返回凭据明文。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateConnectionRequest"
+      responses:
+        "201":
+          description: 连接已创建
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Connection"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/Internal"
+  /api/v1/connections/{connection_id}:
+    parameters:
+      - $ref: "#/components/parameters/ConnectionId"
+    get:
+      tags: [connections]
+      summary: 读取连接
+      responses:
+        "200":
+          description: 连接详情
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Connection"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [connections]
+      summary: 更新连接
+      description: |
+        缺省字段保持原值。`status: disabled` 与专用停用接口等价；切换为 `bearer`
+        前必须已经保存凭据，切换为 `none` 会清除凭据。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateConnectionRequest"
+      responses:
+        "200":
+          description: 更新后的连接
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Connection"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+    delete:
+      tags: [connections]
+      summary: 删除连接及其授权
+      responses:
+        "204":
+          description: 已删除
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/connections/{connection_id}/disable:
+    parameters:
+      - $ref: "#/components/parameters/ConnectionId"
+    post:
+      tags: [connections]
+      summary: 停用连接
+      description: 停用后该连接立即从工具列表消失，工具调用返回 403。
+      responses:
+        "200":
+          description: 已停用的连接
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Connection"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/connections/{connection_id}/credential:
+    parameters:
+      - $ref: "#/components/parameters/ConnectionId"
+    put:
+      tags: [connections]
+      summary: 设置或轮换凭据
+      description: |
+        凭据使用 AES-256-GCM 加密后保存；响应只返回 `credential_configured`。
+        `auth_type: none` 表示清除凭据。凭据明文必须为可见 ASCII，长度 1–4096。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetCredentialRequest"
+      responses:
+        "200":
+          description: 凭据状态已更新
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Connection"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+  /api/v1/connections/{connection_id}/tools:
+    parameters:
+      - $ref: "#/components/parameters/ConnectionId"
+    get:
+      tags: [connections]
+      summary: 检查连接并发现远端工具
+      description: 建立真实 rmcp Streamable HTTP 连接并调用 `tools/list`，不执行业务工具。
+      responses:
+        "200":
+          description: 远端工具定义列表
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ToolList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "502":
+          $ref: "#/components/responses/UpstreamUnavailable"
+  /api/v1/connections/{connection_id}/assignments:
+    parameters:
+      - $ref: "#/components/parameters/ConnectionId"
+    get:
+      tags: [connections]
+      summary: 列出连接授权
+      responses:
+        "200":
+          description: 授权列表
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssignmentList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/connections/{connection_id}/assignments/{subject_type}/{subject_id}:
+    parameters:
+      - $ref: "#/components/parameters/ConnectionId"
+      - name: subject_type
+        in: path
+        required: true
+        schema:
+          type: string
+          enum: [user, group]
+      - name: subject_id
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+    put:
+      tags: [connections]
+      summary: 新增用户或分组授权
+      description: 主体标识是消费项目的不透明外部 ID；重复授权保持成功（204）。
+      responses:
+        "204":
+          description: 已授权
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [connections]
+      summary: 移除用户或分组授权
+      description: 授权不存在时同样返回 204。
+      responses:
+        "204":
+          description: 已移除或原本不存在
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /mcp:
+    post:
+      tags: [mcp]
+      summary: 聚合 MCP endpoint（Streamable HTTP）
+      description: |
+        MCP Streamable HTTP 入口。每个 HTTP 请求都必须同时携带服务 token 与签名用户
+        上下文；客户端可以是 `user` 或 `admin` 角色。
+
+        工具名格式为 `<connection-id-prefix>__<远端工具名>`，连接 ID 前缀在连接生命周期内
+        稳定。`tools/list` 只返回当前租户、当前主体或所属分组已授权的连接工具；
+        `tools/call` 在调用时重新查询授权，不复用列表缓存。单个连接不可用时只跳过
+        该连接，不影响其他连接。
+
+        本 endpoint 返回 JSON-RPC 错误（HTTP 状态由 rmcp 决定）：
+
+        | code | 含义 | data.status |
+        |---|---|---|
+        | -32001 | 调用方身份缺失或无效 | 401 |
+        | -32003 | 工具未授权给当前主体 | 403 |
+        | -32005 | 远端 MCP server 不可用或出站策略拒绝 | 502 |
+        | -32602 | 请求参数不合法 | — |
+        | -32002 | 工具不存在 | 404 |
+
+        rmcp 还会执行 Origin/Host 校验；不在 `gateway.allowed_hosts` 内的 Host 会被拒绝。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: MCP JSON-RPC 2.0 请求（initialize、tools/list、tools/call 等）
+              additionalProperties: true
+      responses:
+        "200":
+          description: MCP JSON-RPC 响应
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+components:
+  securitySchemes:
+    ServiceToken:
+      type: http
+      scheme: bearer
+      description: 消费服务 Bearer token；每个消费服务独立配置。
+    UserContext:
+      type: apiKey
+      in: header
+      name: x-user-context
+      description: |
+        短期签名用户上下文：`base64url_nopad(payload_json).base64url_nopad(hmac_sha256)`。
+        声明包含 `iss`、`aud`、`consumer_id`、`tenant_id`、`subject_id`、`groups`、
+        `role`、`iat`、`exp`；默认有效期上限 300 秒，并允许 30 秒时钟偏差。
+  parameters:
+    ConnectionId:
+      name: connection_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  responses:
+    BadRequest:
+      description: 请求参数不合法或 endpoint 被出站策略拒绝
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            unsafe_endpoint:
+              value:
+                error:
+                  code: unsafe_endpoint
+                  message: 远端 endpoint 只允许 HTTPS 公网地址
+    Unauthorized:
+      description: 服务 token 或签名用户上下文缺失、无效或已过期
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Forbidden:
+      description: 当前角色无权执行该操作
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    NotFound:
+      description: 连接或授权不存在，或不属于当前租户
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Conflict:
+      description: 状态冲突或凭据不可用
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    PayloadTooLarge:
+      description: 请求体超过上限
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Internal:
+      description: 服务内部错误；不返回内部细节
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    UpstreamUnavailable:
+      description: 远端 MCP server 不可用或出站策略拒绝
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+  schemas:
+    LiveResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+    HealthResponse:
+      type: object
+      required: [service, version]
+      properties:
+        service:
+          type: string
+          example: mcp
+        version:
+          type: string
+    ReadinessResponse:
+      type: object
+      required: [status, checks]
+      properties:
+        status:
+          type: string
+          enum: [ready, unavailable]
+        checks:
+          type: object
+          additionalProperties:
+            type: string
+            enum: [ok, fail]
+    AuthType:
+      type: string
+      enum: [none, bearer]
+      description: 匿名连接或 Bearer 凭据连接。
+    ConnectionStatus:
+      type: string
+      enum: [active, disabled]
+    Connection:
+      type: object
+      required:
+        - id
+        - name
+        - endpoint_url
+        - auth_type
+        - credential_configured
+        - status
+        - created_by
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 100
+        endpoint_url:
+          type: string
+          format: uri
+        auth_type:
+          $ref: "#/components/schemas/AuthType"
+        credential_configured:
+          type: boolean
+          description: 是否已保存凭据；凭据明文从不返回。
+        status:
+          $ref: "#/components/schemas/ConnectionStatus"
+        created_by:
+          type: string
+          description: 创建者的 subject ID。
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    CreateConnectionRequest:
+      type: object
+      additionalProperties: false
+      required: [name, endpoint_url, auth_type]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        endpoint_url:
+          type: string
+          format: uri
+        auth_type:
+          $ref: "#/components/schemas/AuthType"
+        credential:
+          type: string
+          writeOnly: true
+          description: Bearer 凭据明文；只写入，不返回，不进入日志。
+    UpdateConnectionRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        endpoint_url:
+          type: string
+          format: uri
+        auth_type:
+          $ref: "#/components/schemas/AuthType"
+        status:
+          $ref: "#/components/schemas/ConnectionStatus"
+    SetCredentialRequest:
+      type: object
+      additionalProperties: false
+      required: [auth_type]
+      properties:
+        auth_type:
+          $ref: "#/components/schemas/AuthType"
+        credential:
+          type: string
+          writeOnly: true
+          description: "可见 ASCII，长度 1–4096；`auth_type: none` 时省略或置空。"
+    Assignment:
+      type: object
+      required: [subject_type, subject_id]
+      properties:
+        subject_type:
+          type: string
+          enum: [user, group]
+        subject_id:
+          type: string
+          description: 消费项目的不透明用户或分组 ID。
+    ConnectionList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Connection"
+    AssignmentList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Assignment"
+    ToolList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          description: 远端返回的 MCP 工具定义（JSON 对象）。
+          items:
+            type: object
+            additionalProperties: true
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum:
+                - invalid_request
+                - unauthorized
+                - forbidden
+                - not_found
+                - conflict
+                - unsafe_endpoint
+                - credential_unavailable
+                - upstream_unavailable
+                - payload_too_large
+                - internal
+            message:
+              type: string
+              description: 展示用说明；不包含凭据或内部细节。

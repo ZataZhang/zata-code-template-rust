@@ -1,6 +1,6 @@
 # 部署
 
-这份指南覆盖 accounts、Agent 服务与 Agent tracing 三个后端、三个独立前端入口的 Docker Compose 部署、生产要求和 HTTPS 代理。部署配置存于 Nacos；本机 `.env.local` 只提供 Nacos 地址和认证凭据。namespace、group、应用 TOML Data ID 与 Compose Properties Data ID 固定在项目 `config.toml` 的 `[nacos]` 区域。配置项见 [`configuration.md`](configuration.md)，Agent 服务边界见 [`agent-service.md`](agent-service.md)，账号边界见 [`accounts-integration.md`](accounts-integration.md)，数据库备份见 [`backup.md`](backup.md)。
+这份指南覆盖 accounts、Agent 服务、Agent tracing 三个默认后端与可选的 MCP 网关、三个独立前端入口的 Docker Compose 部署、生产要求和 HTTPS 代理。部署配置存于 Nacos；本机 `.env.local` 只提供 Nacos 地址和认证凭据。namespace、group、应用 TOML Data ID 与 Compose Properties Data ID 固定在项目 `config.toml` 的 `[nacos]` 区域。配置项见 [`configuration.md`](configuration.md)，Agent 服务边界见 [`agent-service.md`](agent-service.md)，MCP 服务边界见 [`mcp-service.md`](mcp-service.md)，账号边界见 [`accounts-integration.md`](accounts-integration.md)，数据库备份见 [`backup.md`](backup.md)。
 
 ## 1. 本机或单机部署
 
@@ -32,7 +32,7 @@ just stack-up
 | Producer ingest API | `http://localhost:8082/api/v1/ingest/runs/{run_id}/events` | tracing UI nginx 保留 `/api/v1/ingest/*` 原路径并代理到 agent-tracing |
 | accounts API / Agent API / tracing API | 不直接发布宿主机端口 | 经各自前端 nginx 或受控内部网络访问 |
 
-常用命令：`just stack-logs [服务名]`、`just tracing-up` / `just tracing-down`、`just agent-up` / `just agent-down`、`just stack-down`（保留数据）、`just stack-reset`（**删除三套数据库、Agent Blob 与 Redis 数据卷**）。这些命令同样需要先从 Nacos 读取配置。
+常用命令：`just stack-logs [服务名]`、`just tracing-up` / `just tracing-down`、`just agent-up` / `just agent-down`、`just mcp-up` / `just mcp-down`、`just stack-down`（保留数据）、`just stack-reset`（**删除默认三套数据库、Agent Blob 与 Redis 数据卷；不清 MCP 数据卷**）。这些命令同样需要先从 Nacos 读取配置。
 
 宿主机端口和 Compose 项目可对单条命令临时覆盖，不会写回 Nacos：
 
@@ -50,6 +50,28 @@ COMPOSE_PROJECT_NAME=tpl-review COMPOSE_WEB_PORT=13000 COMPOSE_ADMIN_PORT=13001 
 COMPOSE_PROJECT_NAME=accounts-dev COMPOSE_ACCOUNTS_PORT=28082 just accounts-up
 ```
 
+### 可选启动 MCP 网关
+
+MCP 网关不在默认 `just stack-up` 中启动：它在根 `docker-compose.yml` 里放在 `mcp` profile 下，只有 `just mcp-up` 才会读取 Nacos 配置并带上该 profile。它使用第四个独立 PostgreSQL（`mcp-postgres`，不发布宿主机端口）和自己的数据卷，缺失 Nacos 中的 MCP 密文主密钥或消费方清单时容器会启动失败，而不是以不可用状态运行。
+
+```bash
+just mcp-docker-build   # 仅构建镜像
+just mcp-up             # 读取 Nacos 后启动 mcp-postgres 与 mcp-service
+curl -s http://127.0.0.1:8092/ready
+just mcp-down
+```
+
+需要放到 Nacos Compose Data ID 的键：
+
+| 键 | 要求 |
+|---|---|
+| `MCP_DB_PASSWORD` | MCP 专属数据库的独立 URL-safe 强随机值；不要与其它数据库复用 |
+| `MCP_CREDENTIAL_KEY_BASE64` | AES-256-GCM 主密钥，标准 Base64 编码的 32 字节；轮换后旧密文无法解密，需重新录入凭据 |
+| `MCP_CONSUMERS_JSON` | 调用方清单，每项含 `consumer_id`、`token`、`context_signing_secret`，后两者至少 32 字符；不能为空数组 |
+| `MCP_PORT`（可选） | 宿主机回环端口，默认 8092；compose-config 只接受有效端口 |
+
+MCP 不读取 Nacos 应用 TOML：它的非敏感默认值在 `services/mcp/config.toml`，秘密只经上述环境变量注入；其余覆盖使用 `APP_MCP__*` 环境变量。网关端口默认只发布到 `127.0.0.1`，生产应由会覆盖写 Host 的可信代理转发，并保持默认的 Host 校验。MCP 凭据与消费方 token 只由 compose-config 进程注入容器，不要通过 `docker inspect` 或日志导出。
+
 ### 服务关系
 
 ```text
@@ -63,10 +85,11 @@ COMPOSE_PROJECT_NAME=accounts-dev COMPOSE_ACCOUNTS_PORT=28082 just accounts-up
                        ├─ /api/admin/agent-traces/* → agent-tracing:8090
                        └─ / → Trace Studio
 Agent 服务 ── outbox ──────────────────────────→ tracing-ui/api/v1/ingest/*（或 agent-tracing 内部地址）
+消费方后端 ── Bearer + 用户上下文 ──────────────→ mcp-service:8092（可选）→ mcp postgres
 ```
 
-- `accounts` 的 `/ready` 检查自己的 PostgreSQL 与 Redis；`agent-service` 的 `/ready` 检查 Agent 专属 PostgreSQL；`agent-tracing` 的 `/ready` 检查 tracing 专属 PostgreSQL。任一数据库不可用约 30 秒后相应服务变为 `unhealthy`。tracing 故障不会让 Agent 的 `/ready` 失败，outbox 会在恢复后继续投递。
-- 三个后端启动时分别只执行自己数据库中的迁移；互不连接或迁移对方数据库。
+- `accounts` 的 `/ready` 检查自己的 PostgreSQL 与 Redis；`agent-service` 的 `/ready` 检查 Agent 专属 PostgreSQL；`agent-tracing` 的 `/ready` 检查 tracing 专属 PostgreSQL；`mcp-service` 的 `/ready` 检查 MCP 专属 PostgreSQL。任一数据库不可用约 30 秒后相应服务变为 `unhealthy`。tracing 故障不会让 Agent 的 `/ready` 失败，outbox 会在恢复后继续投递。
+- 四个后端启动时分别只执行自己数据库中的迁移；互不连接或迁移对方数据库。
 - Redis 使用 AOF 持久化；重启后用户会话通常仍然有效。
 
 ## 2. 为什么前台前面必须有 nginx
@@ -91,10 +114,11 @@ Agent 服务 ── outbox ─────────────────�
 | `AGENT_TRACING_PRODUCER_TOKEN` | 与 `AGENT_TRACING_PRODUCERS_JSON` 中对应条目一致；只注入 agent-service |
 | `AGENT_TRACING_PRODUCERS_JSON` | 每个 producer 绑定固定 `source_id` / `project_id` 的 Bearer Token；至少 32 字符，放在受控 Nacos 配置或密钥管理中 |
 | `AGENT_PLATFORM_ADMIN_IDS` | 平台管理员 accounts ID；只允许创建组织/授权组织管理员，不自动获得组织 scope |
+| `MCP_DB_PASSWORD`、`MCP_CREDENTIAL_KEY_BASE64`、`MCP_CONSUMERS_JSON` | 只有启用 `mcp` profile 时必填；MCP 独立数据库密码、32 字节 Base64 主密钥、非空消费方清单，均不复用其它服务的秘密 |
 | `ADMIN_BOOTSTRAP_PASSWORD` | 如需引导管理员，使用强随机值；账号只在**不存在**时创建，事后改配置不会改已有密码 |
 | `COOKIE_SECURE=true` | HTTPS 部署必须开启；否则会话 Cookie 可能经明文传输 |
 | `TRUSTED_PROXY_CIDR` | 配置 HTTPS 终止代理的 IP/CIDR；默认只认直接连接对端 |
-| 备份 | 配置定时备份并演练恢复，见 [`backup.md`](backup.md)；三套数据库与 Agent Blob 卷都要覆盖 |
+| 备份 | 配置定时备份并演练恢复，见 [`backup.md`](backup.md)；三套默认数据库与 Agent Blob 卷都要覆盖。启用 MCP 时另需备份 `mcp-postgres`（它不发布宿主机端口，可用 `docker compose --env-file /dev/null --profile mcp -f docker-compose.yml exec -T mcp-postgres pg_dump -U mcp -d mcp --format=custom` 导出） |
 
 数据库、Redis、Agent 服务 token 和管理员密码只由 compose-config 进程注入容器。不要通过 `docker inspect`、调试输出或日志导出这些环境字段。
 
@@ -131,8 +155,9 @@ nginx 会从受信任的代理请求里还原客户端地址，再覆盖写 `X-F
 | 管理后台 | `just web-admin-docker-build` | `BACKEND_UPSTREAM`（默认 `accounts:8080`）、`AGENT_UPSTREAM`（默认 `agent-service:8091`）、`AGENT_SERVICE_TOKEN`、`TRUSTED_PROXY_CIDR` |
 | Agent tracing 后端 | `just tracing-docker-build` | tracing 独立 `APP_DATABASE__URL`、`APP_ACCOUNTS__ADMIN_AUTH_URL`、`APP_PRODUCER__CREDENTIALS_JSON`；监听 8090，以非 root 运行 |
 | Tracing Studio | `just web-tracing-docker-build` | `ACCOUNTS_UPSTREAM`、`TRACING_UPSTREAM`、`TRUSTED_PROXY_CIDR`；同时代理 producer 写入口 |
+| MCP 网关（可选） | `just mcp-docker-build` | `MCP_DATABASE_URL`、`MCP_CREDENTIAL_KEY_BASE64`、`MCP_CONSUMERS_JSON`；监听 8092，以非 root 运行 |
 
-单独运行镜像时由部署平台提供运行时变量。三个 Rust 后端镜像都包含系统 CA 信任库，供 Nacos、Agent Runtime 和 accounts 等 HTTPS 上游校验证书。完整 Compose 会通过 `/login` 检查 public Next.js 服务就绪；`stack-up --wait` 最多等待 120 秒。Nacos Compose 读取器只管理本仓库 Compose 配置，不是账号服务镜像的一部分。容器镜像不带 `curl`；编排平台的探针直接请求 `/live`、`/ready`。
+单独运行镜像时由部署平台提供运行时变量。四个 Rust 后端镜像都包含系统 CA 信任库，供 Nacos、Agent Runtime、MCP 上游和 accounts 等 HTTPS 上游校验证书。完整 Compose 会通过 `/login` 检查 public Next.js 服务就绪；`stack-up --wait` 最多等待 120 秒。Nacos Compose 读取器只管理本仓库 Compose 配置，不是账号服务镜像的一部分。容器镜像不带 `curl`；编排平台的探针直接请求 `/live`、`/ready`。
 
 ## 6. 排错
 
@@ -143,6 +168,8 @@ nginx 会从受信任的代理请求里还原客户端地址，再覆盖写 `X-F
 - public 的 Agent 调用返回 `503 agent_unavailable`：检查 `web` 的 `AGENT_SERVICE_URL`/`AGENT_SERVICE_TOKEN` 与 Route Handler 日志；admin 返回同样错误时检查 `AGENT_UPSTREAM`、`AGENT_SERVICE_TOKEN` 和 nginx。
 - Agent 返回 `401 service_unauthorized`：调用方 token 是否在 `AGENT_SERVICE_TOKENS_JSON` 中且一致；不要用 accounts 的管理员 Cookie 代替服务凭据。
 - `agent-tracing` 一直 `unhealthy`：`just stack-logs agent-tracing tracing-postgres`；检查 tracing 专属密码和 `AGENT_TRACING_DB_PASSWORD`，不要改用 accounts 数据库。
+- `mcp-service` 启动即退出或一直 `unhealthy`：`just stack-logs mcp-service mcp-postgres`；依次检查 `MCP_DB_PASSWORD` 与 `mcp-postgres` 数据卷中的旧密码是否一致、`MCP_CREDENTIAL_KEY_BASE64` 是否为 Base64 的 32 字节、`MCP_CONSUMERS_JSON` 是否为非空数组且每项 token/签名密钥至少 32 字符。MCP 不读 Nacos 应用 TOML，不要只改应用配置排查。
+- MCP 上游调用返回 `-32005` / `502`：检查 `just mcp-down` 后再看连接检查日志；默认只允许 HTTPS 公网地址，拒绝 loopback、私网、链路本地与云元数据地址，也不会跟随重定向。只有本地测试服务器才应显式设置 `APP_MCP__SECURITY__ALLOW_INSECURE_LOOPBACK=true` 并允许 loopback HTTP。
 - Agent Run 完成但 tracing 缺事件：检查 outbox 日志、`AGENT_TRACING_PRODUCER_TOKEN` 与 `AGENT_TRACING_PRODUCERS_JSON`；tracing 恢复后 outbox 会补投，不会阻塞 Run。
 - producer 收到 `401 producer_unauthorized`：核对 `AGENT_TRACING_PRODUCERS_JSON` 中的 source/project/token；未出现在当前配置的 source 会被禁用。
 - producer 收到 `409 sequence_gap`：按 `expected_seq` 从 producer 持久队列重发连续事件；同一序号不同内容不能覆盖已提交事件。

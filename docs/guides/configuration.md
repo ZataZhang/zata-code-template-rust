@@ -54,6 +54,22 @@ producer 凭据 JSON 示例：
 
 JSON 不要写入服务 TOML 或提交到仓库。完整事件、错误码与续传规则见 [`services/agent-tracing/README.md`](../../services/agent-tracing/README.md)。
 
+## MCP 服务
+
+MCP 网关从 [`services/mcp/config.toml`](../../services/mcp/config.toml) 读取非敏感默认值，不读取根 `config.toml` 或 Nacos 应用 TOML；它拥有独立数据库与凭据加密主密钥。秘密只由环境或部署平台注入：
+
+| 配置 | 默认 | 说明 |
+|---|---|---|
+| `MCP_DATABASE_URL` | 未配置 | **必填**，MCP 专属 PostgreSQL；启动时执行 `services/mcp/migrations/`，不要与其它服务共用 |
+| `MCP_CREDENTIAL_KEY_BASE64` | 未配置 | **必填**，AES-256-GCM 主密钥，标准 Base64 编码的 32 字节；轮换后旧密文不可解密 |
+| `MCP_CONSUMERS_JSON` | `[]` | **必须非空**，调用方清单 `[{"consumer_id":"web","token":"…","context_signing_secret":"…"}]`；token 与签名密钥至少 32 字符 |
+| `APP_MCP__SERVER__HOST` / `PORT` | `127.0.0.1` / `8092` | 容器镜像绑定 `0.0.0.0:8092`，Compose 只发布宿主机回环端口 |
+| `APP_MCP__SECURITY__ALLOW_INSECURE_LOOPBACK` | `false` | 仅本地测试：允许访问 loopback 上的 HTTP MCP server；生产保持关闭 |
+| `APP_MCP__GATEWAY__ALLOWED_HOSTS` | `["localhost","127.0.0.1","::1"]` | MCP endpoint 的 Host 校验；环境变量可用 JSON 数组覆盖 |
+| `APP_MCP__OUTBOUND__*` | 见 `config.toml` | 远端连接/请求超时、响应字节上限与单连接工具数上限 |
+
+数据库连接串与主密钥在 `Debug` 输出里被隐藏。签名格式、错误码与上游安全策略见 [`mcp-service.md`](mcp-service.md)。
+
 ## 后端
 
 | 配置 | 默认 | 说明 |
@@ -96,7 +112,7 @@ JSON 不要写入服务 TOML 或提交到仓库。完整事件、错误码与续
 
 Compose 使用与应用 TOML 相同的 Nacos server 与认证参数，但通过 `[nacos].compose_data_id` 读取独立 Data ID。`[nacos]` 的 namespace/group 与两类 Data ID 都留在项目配置文件中；`.env.local` 只存 Nacos server 地址与认证凭据，不存 PostgreSQL、Redis 或管理员密码。Nacos 不可达、认证失败、配置不存在或内容无效时，入口会在运行 Docker 前停止，不会改用本地文件。
 
-配置文件只接受受限的字面量 `KEY=value` 行：允许空行与 `#` / `!` 注释；不执行 shell、变量插值或引号转义；拒绝未知/重复键、控制字符和类型不正确的值。必填键为 `POSTGRES_PASSWORD`、`REDIS_PASSWORD`、`AGENT_TRACING_DB_PASSWORD`、`AGENT_DB_PASSWORD`、`AGENT_WEB_SERVICE_TOKEN`、`AGENT_ADMIN_SERVICE_TOKEN`、`AGENT_TRACING_PRODUCER_TOKEN`；引导管理员凭据可选，producer 清单默认 `[]`，`AGENT_PLATFORM_ADMIN_IDS` 默认 `[1]`。端口必须在 1–65535，`COOKIE_SECURE` 仅接受 `true`/`false`，`LOG_FORMAT` 仅接受 `text`/`json`，`TRUSTED_PROXY_CIDR` 仅接受 IP 地址或 CIDR。
+配置文件只接受受限的字面量 `KEY=value` 行：允许空行与 `#` / `!` 注释；不执行 shell、变量插值或引号转义；拒绝未知/重复键、控制字符和类型不正确的值。必填键为 `POSTGRES_PASSWORD`、`REDIS_PASSWORD`、`AGENT_TRACING_DB_PASSWORD`、`AGENT_DB_PASSWORD`、`AGENT_WEB_SERVICE_TOKEN`、`AGENT_ADMIN_SERVICE_TOKEN`、`AGENT_TRACING_PRODUCER_TOKEN`；引导管理员凭据可选，producer 清单默认 `[]`，`AGENT_PLATFORM_ADMIN_IDS` 默认 `[1]`。MCP 的三项秘密不参与 compose-config 的必填校验，而由 `mcp-service` 在启动时检查；缺失时容器启动失败。端口必须在 1–65535，`COOKIE_SECURE` 仅接受 `true`/`false`，`LOG_FORMAT` 仅接受 `text`/`json`，`TRUSTED_PROXY_CIDR` 仅接受 IP 地址或 CIDR。
 
 示例结构见 [`deploy/nacos/rust-study-compose.properties.example`](../../deploy/nacos/rust-study-compose.properties.example)；把内容作为 Nacos 配置发布，不要复制为本地部署环境文件。完整 stack 中 accounts 不发布端口，前面有覆盖写代理头的 nginx，因此固定启用 `trust_forwarded_for=true`；独立开发使用 `docker-compose.accounts.yml`，仅绑定回环地址并关闭该信任。
 
@@ -113,6 +129,8 @@ Compose 使用与应用 TOML 相同的 Nacos server 与认证参数，但通过 
 | `COOKIE_SECURE` | HTTPS 访问时必须 `true` |
 | `TRUSTED_PROXY_CIDR` | 前面有 HTTPS 终止代理时填它的地址段，默认只认直接对端 |
 | `WEB_PORT`、`ADMIN_PORT`、`TRACING_UI_PORT` | 宿主机端口，默认 3000 / 8081 / 8082 |
+| `MCP_DB_PASSWORD`、`MCP_CREDENTIAL_KEY_BASE64`、`MCP_CONSUMERS_JSON` | 启用 `mcp` profile 时必填；独立数据库密码、32 字节 Base64 主密钥、非空消费方清单 |
+| `MCP_PORT` | 可选，MCP 网关宿主机回环端口，默认 8092 |
 | `LOG_FORMAT` | `json`（默认）或 `text` |
 
 应用 Nacos 配置使用 TOML，例如 `[database]` 下的 `url` 和 `[redis]` 下的 `url`；Compose Nacos 配置使用 Properties。两类配置共享 `[nacos]` 中的 namespace/group 和 `.env.local` 中的 server/认证参数，但读取不同 Data ID。Nacos 用户名/密码或令牌只放在 `.env.local` 或部署平台的密钥管理中，不要写进远端业务配置。
