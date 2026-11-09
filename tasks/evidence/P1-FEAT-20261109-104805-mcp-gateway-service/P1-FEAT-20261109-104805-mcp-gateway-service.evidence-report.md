@@ -16,7 +16,7 @@
 - §9 的执行侧验收项由最终工作树的真实入口证据覆盖；3 项 Human-Confirmed 保持未勾选，等待人工确认。
 - `rv-1`、`rv-2`、`rv-3` 已在最后一次源码改动后重跑并通过；最终命令输出和 Git 身份由随 PR 发布的 Kc 结构化证据评论绑定。
 - 本轮 `just test`、`just test real`、`just ci`、响应上限定向测试、Docker 构建与隔离 Full stack smoke 均通过；远端 GitHub 检查以最终 PR head 的 Checks 为准。
-- `kc evidence check --evidence tasks/evidence/P1-FEAT-20261109-104805-mcp-gateway-service` 将在提交后的最终 PR head 上重跑，结果以对应发布评论为准。
+- `kc evidence check --evidence tasks/evidence/P1-FEAT-20261109-104805-mcp-gateway-service` 对最终源码树 3/3 PASSED；发布评论绑定实际 PR head、base 与 patch 指纹。
 - 最终 HEAD、PR base、patch 指纹与证据文件 SHA-256 记录在 orphan evidence branch 和绑定该 PR head 的 Kc 证据评论中，避免报告正文引用过期版本。
 
 ## 2. 最终代码状态
@@ -90,7 +90,7 @@ RV 日志与 manifest 校验结果由 PR 的 Kc 结构化证据评论呈递；�
 | 备份 SIGPIPE 负控 | 原管道 paced 输出状态为 `141 0`，完整消费管道为 `0 0`；上游失败码 `42` 仍保留，缺表仍以 `1` 拒绝。详见 `backup-sigpipe-regression.txt` |
 | `just mcp-up` | 在 checkpoint `b1e62f9` 上启动 `mcp-service` 与 `mcp-postgres` 至 healthy；最终树 e2e 各场景继续通过真实 `/ready` 轮询 |
 | `/ready` 与 `/live` | checkpoint 上 `/ready` 返回数据库 `ok`，`/live` 返回 `status=ok`；最终树 e2e 的 `/ready` 轮询通过 |
-| `kc evidence check --evidence tasks/evidence/P1-FEAT-20261109-104805-mcp-gateway-service` | 最终提交后重跑；结果由绑定当前 PR head 的 Kc 评论发布 |
+| `kc evidence check --evidence tasks/evidence/P1-FEAT-20261109-104805-mcp-gateway-service` | 最终源码树 3/3 PASSED；最终 Git 身份由 Kc 评论发布 |
 
 Full stack 使用隔离 Compose 项目和专用网络；没有对共享开发数据库执行删除/恢复。远端 GitHub 检查未在本地伪报为通过，需 runner 在后续提交/推送后执行。
 
@@ -108,7 +108,7 @@ Full stack 使用隔离 Compose 项目和专用网络；没有对共享开发数
 
 ## 8. Reviewer findings
 
-1. **Realistic Validation 证据版本过期 — 已修复。** `rv-1`、`rv-2`、`rv-3` 在最后一次源码改动后重跑；提交后的 Kc evidence check 与评论将绑定最终 PR head、base 和 patch 指纹。
+1. **Realistic Validation 证据版本过期 — 已修复。** `rv-1`、`rv-2`、`rv-3` 在最后一次源码改动后重跑，Kc evidence check 3/3 通过；发布评论绑定最终 PR head、base 和 patch 指纹。
 2. **JSON 响应上限与自定义 transport 的 16 MiB 上限 — 已修复。** RMCP HTTP client 外包一层流式有界客户端，在 JSON bytes 进入 serde 前按配置限流，并将单页配置钳制到 16 MiB；同时限制 SSE 事件与分页累计大小。分块响应回归测试覆盖无 `Content-Length` 情况；配置与指南同步。
 3. **放行 `2001:2::/48` — 拒绝。** 本服务只允许全局可达的目标；IANA 登记表把 `2001:2::/48` 标为 Benchmarking 且 `Globally Reachable=False`，故它属于 `2001::/23` 默认拒绝范围。rv-2 证明注册与消费阶段均拒绝该地址。依据：[IANA IPv6 Special-Purpose Address Registry](https://www.iana.org/assignments/iana-ipv6-special-registry)。
 4. **Agent 备份校验 SIGPIPE — 已修复并有本地完整栈证据。** `db-backup.sh` 不再用 `grep -q` 提前退出；真实 TOC 的 paced 管道负控验证了旧行为 141 与修复后 0，并验证生产者错误与缺表检测仍保留。隔离 Full stack smoke（入口、认证隔离、限流、备份与恢复）通过。远端 GitHub gate 必须等 runner 提交/推送后执行。
