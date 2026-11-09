@@ -680,6 +680,7 @@ async fn real_remote_connection_scenario() {
         "https://192.168.1.1/mcp",
         "https://[::ffff:a9fe:a9fe]/mcp",
         "https://[fd00:ec2::254]/mcp",
+        "https://[2001:2::1]/mcp",
     ] {
         let rejected = admin_caller
             .apply(http.post(format!("{safe_base}/api/v1/connections")))
@@ -891,6 +892,44 @@ async fn real_remote_connection_scenario() {
     assert_eq!(text, format!("upstream-result:{UPSTREAM_TOOL}:{city}"));
     checkpoint("负控：真实不可用的上游连接不提供工具，调用返回 -32005/502；健康连接仍可发现和调用");
     let _ = client.cancel().await;
+
+    // 模拟历史数据绕过写入校验：消费点仍须拒绝保留地址，且不能发起上游调用。
+    sqlx::query("UPDATE mcp_connections SET endpoint_url = $1 WHERE id = $2")
+        .bind("https://[2001:2::1]/mcp")
+        .bind(connection_id)
+        .execute(&pool)
+        .await
+        .expect("写入历史不安全地址");
+    let request_count_before = upstream_requests.load(Ordering::SeqCst);
+    let rejected = admin_caller
+        .apply(http.get(format!(
+            "{base_after_restart}/api/v1/connections/{connection_id}/tools"
+        )))
+        .send()
+        .await
+        .expect("检查历史连接");
+    assert_eq!(rejected.status(), StatusCode::BAD_REQUEST);
+    let rejected: Value = rejected.json().await.expect("错误响应是 JSON");
+    assert_eq!(rejected["error"]["code"], json!("unsafe_endpoint"));
+    let client = gateway_client(&base_after_restart, &allowed_user).await;
+    assert!(
+        client
+            .list_all_tools()
+            .await
+            .expect("跳过不安全连接")
+            .is_empty()
+    );
+    assert!(
+        call_gateway_tool(&client, &expected_tool, json!({}))
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        upstream_requests.load(Ordering::SeqCst),
+        request_count_before
+    );
+    let _ = client.cancel().await;
+    checkpoint("负控：2001:2::1 在注册与消费阶段被拒绝，历史连接不暴露工具也不可调用");
 
     // 两次进程的日志都不得包含凭据或工具参数。
     let combined_logs = format!("{first_logs}\n{}", restarted.logs());

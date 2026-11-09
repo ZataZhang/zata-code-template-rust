@@ -28,8 +28,9 @@ trap 'rm -f "$TEMP" "$AGENT_TEMP" "$TRACING_TEMP"' EXIT
 
 "${COMPOSE[@]}" exec -T postgres pg_dump -U app -d app --format=custom --no-owner >"$TEMP"
 
-# 校验：能列出目录说明文件是完整可读的 dump，且确实包含用户表。
-if ! "${COMPOSE[@]}" exec -T postgres pg_restore --list <"$TEMP" | grep -q ' users$\| TABLE public users '; then
+# 校验：完整消费目录输出；grep -q 提前退出会使上游收到 SIGPIPE，
+# 在 pipefail 下把包含目标表的大目录误报为失败。仍保留 pg_restore 的失败状态。
+if ! "${COMPOSE[@]}" exec -T postgres pg_restore --list <"$TEMP" | grep ' users$\| TABLE public users ' >/dev/null; then
   echo "备份校验失败：dump 里找不到 users 表，已丢弃" >&2
   exit 1
 fi
@@ -37,7 +38,7 @@ mv "$TEMP" "$TARGET"
 
 "${COMPOSE[@]}" exec -T agent-postgres pg_dump -U agent -d agent --format=custom --no-owner >"$AGENT_TEMP"
 
-if ! "${COMPOSE[@]}" exec -T agent-postgres pg_restore --list <"$AGENT_TEMP" | grep -q ' TABLE public business_agents '; then
+if ! "${COMPOSE[@]}" exec -T agent-postgres pg_restore --list <"$AGENT_TEMP" | grep ' TABLE public business_agents ' >/dev/null; then
   echo "Agent 备份校验失败：dump 里找不到 business_agents 表，已丢弃 agent 临时文件" >&2
   exit 1
 fi
@@ -45,7 +46,7 @@ mv "$AGENT_TEMP" "$AGENT_TARGET"
 
 "${COMPOSE[@]}" exec -T tracing-postgres pg_dump -U agent_tracing -d agent_tracing --format=custom --no-owner >"$TRACING_TEMP"
 
-if ! "${COMPOSE[@]}" exec -T tracing-postgres pg_restore --list <"$TRACING_TEMP" | grep -q ' TABLE public agent_run_events '; then
+if ! "${COMPOSE[@]}" exec -T tracing-postgres pg_restore --list <"$TRACING_TEMP" | grep ' TABLE public agent_run_events ' >/dev/null; then
   echo "tracing 备份校验失败：dump 里找不到 agent_run_events 表，已丢弃 tracing 临时文件" >&2
   exit 1
 fi

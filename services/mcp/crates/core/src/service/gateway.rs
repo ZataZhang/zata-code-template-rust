@@ -1,5 +1,6 @@
 //! MCP 网关用例：按调用方授权聚合工具，并在调用时重新校验授权。
 
+use futures_util::{StreamExt, stream};
 use serde_json::Value;
 
 use super::McpService;
@@ -10,7 +11,7 @@ use crate::ports::{RemoteMcpError, RepositoryError};
 use crate::tool::{AuthorizedTool, ToolCallOutcome, exposed_tool_name, parse_exposed_tool_name};
 
 impl McpService {
-    /// 列出当前主体获准使用的全部工具；单个连接失败只跳过该连接。
+    /// 列出当前主体获准使用的全部工具；最多并发查询 8 个连接，单个失败只跳过该连接。
     pub async fn list_authorized_tools(
         &self,
         identity: &IdentityContext,
@@ -25,12 +26,20 @@ impl McpService {
             .map_err(Self::map_repository_error)?;
 
         let mut authorized_tools = Vec::new();
-        for connection in connections {
-            match self.collect_connection_tools(&connection).await {
+        // 有界并发避免单个慢上游阻塞后续连接，同时限制出站资源占用。
+        let mut pending = stream::iter(connections.into_iter().map(|connection| async move {
+            (
+                connection.id,
+                self.collect_connection_tools(&connection).await,
+            )
+        }))
+        .buffer_unordered(8);
+        while let Some((connection_id, discovered)) = pending.next().await {
+            match discovered {
                 Ok(mut connection_tools) => authorized_tools.append(&mut connection_tools),
                 Err(error) => {
                     tracing::warn!(
-                        connection_id = %connection.id,
+                        connection_id = %connection_id,
                         error = %error,
                         "跳过不可用的 MCP 连接"
                     );

@@ -153,9 +153,13 @@ fn ipv6_is_public(address: Ipv6Addr) -> bool {
     if segments[0] == 0x2001 && segments[1] == 0x0db8 {
         return false;
     }
-    // 2001::/32 Teredo。
-    if segments[0] == 0x2001 && segments[1] == 0 {
-        return false;
+    // 2001::/23 默认为非全球可达，仅放行 IANA 明确标为全球可达的子分配。
+    // 包含 Benchmarking 2001:2::/48、Teredo 与已弃用 ORCHID 的默认拒绝。
+    if segments[0] == 0x2001 && segments[1] < 0x0200 {
+        return (segments[1] == 1 && segments[2..7] == [0; 5] && (1..=3).contains(&segments[7]))
+            || segments[1] == 3
+            || (segments[1] == 4 && segments[2] == 0x0112)
+            || (0x0020..=0x003f).contains(&segments[1]);
     }
     // 3fff::/20 文档地址。
     if segments[0] == 0x3fff && (segments[1] & 0xf000) == 0 {
@@ -197,6 +201,20 @@ mod tests {
             .await
             .expect("带端口的公网地址应当通过");
         assert_eq!(validated.addresses[0].port(), 8443);
+        for target in [
+            "https://[2606:4700:4700::1111]/mcp",
+            "https://[2001:1::1]/mcp",
+            "https://[2001:3::1]/mcp",
+            "https://[2001:4:112::1]/mcp",
+            "https://[2001:20::1]/mcp",
+            "https://[2001:30::1]/mcp",
+            "https://[2001:200::1]/mcp",
+        ] {
+            policy
+                .validate(&url(target))
+                .await
+                .expect("全球可达地址应通过");
+        }
     }
 
     #[tokio::test]
@@ -214,6 +232,11 @@ mod tests {
             "https://[fd00::1]/mcp",
             "https://[fe80::1]/mcp",
             "https://[2001:db8::1]/mcp",
+            "https://[2001:2::1]/mcp",
+            "https://[2001:2:0:ffff::1]/mcp",
+            "https://[2001:10::1]/mcp",
+            "https://[2001:1::4]/mcp",
+            "https://[2001:1ff::1]/mcp",
             "https://[::ffff:169.254.169.254]/mcp",
         ] {
             let error = policy

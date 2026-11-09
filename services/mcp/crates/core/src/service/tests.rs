@@ -303,6 +303,7 @@ type RecordedCall = (Uuid, String, Option<Value>);
 #[derive(Clone, Default)]
 struct FakeRemoteClient {
     tools: Arc<Mutex<HashMap<Uuid, Vec<String>>>>,
+    listing_barrier: Arc<Mutex<Option<Arc<tokio::sync::Barrier>>>>,
     failing: Arc<Mutex<HashSet<Uuid>>>,
     calls: Arc<Mutex<Vec<RecordedCall>>>,
     seen_credentials: Arc<Mutex<Vec<Option<String>>>>,
@@ -361,6 +362,10 @@ impl RemoteMcpClient for FakeRemoteClient {
         target: &RemoteTarget,
     ) -> Result<Vec<RemoteToolDefinition>, RemoteMcpError> {
         self.remember_credential(target);
+        let listing_barrier = self.listing_barrier.lock().expect("测试同步锁可用").clone();
+        if let Some(barrier) = listing_barrier {
+            barrier.wait().await;
+        }
         if self.is_failing(target.connection_id) {
             return Err(RemoteMcpError::Unavailable);
         }
@@ -851,3 +856,5 @@ async fn disabled_connections_disappear_from_listing_and_calls() {
         .expect_err("停用连接不可调用");
     assert_eq!(forbidden, McpError::Forbidden);
 }
+
+mod concurrency;

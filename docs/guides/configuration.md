@@ -66,7 +66,7 @@ MCP 网关从 [`services/mcp/config.toml`](../../services/mcp/config.toml) 读�
 | `APP_MCP__SERVER__HOST` / `PORT` | `127.0.0.1` / `8092` | 容器镜像绑定 `0.0.0.0:8092`，Compose 只发布宿主机回环端口 |
 | `APP_MCP__SECURITY__ALLOW_INSECURE_LOOPBACK` | `false` | 仅本地测试：允许访问 loopback 上的 HTTP MCP server；生产保持关闭 |
 | `APP_MCP__GATEWAY__ALLOWED_HOSTS` | `["localhost","127.0.0.1","::1"]` | MCP endpoint 的 Host 校验；环境变量可用 JSON 数组覆盖 |
-| `APP_MCP__OUTBOUND__*` | 见 `config.toml` | 远端连接/请求超时、响应字节上限与单连接工具数上限 |
+| `APP_MCP__OUTBOUND__*` | 见 `config.toml` | 远端连接/请求超时、SSE 解析前及 JSON 结果编码后字节上限与单连接工具数上限；[JSON 接收和内存限制](mcp-service.md) |
 
 数据库连接串与主密钥在 `Debug` 输出里被隐藏。签名格式、错误码与上游安全策略见 [`mcp-service.md`](mcp-service.md)。
 

@@ -11,7 +11,7 @@ just db-backup                       # 写出 app-、agent- 与 agent-tracing-<U
 RETENTION_DAYS=14 just db-backup     # 同时清理三个前缀、超过 14 天的旧备份（默认 30）
 ```
 
-脚本（`scripts/db-backup.sh`）通过 Rust `compose-config` 加载 Nacos 配置后执行；需要安装 Rust/Cargo、Just 与 Docker Compose。它会分别在 `postgres`、`agent-postgres` 与 `tracing-postgres` 容器中执行 `pg_dump --format=custom`，并先写临时文件、校验 dump 含有预期数据表后才保存正式文件。账号 dump 检查 `users` 表，Agent dump 检查 `business_agents` 表，tracing dump 检查 `agent_run_events` 表。
+脚本（`scripts/db-backup.sh`）通过 Rust `compose-config` 加载 Nacos 配置后执行；需要安装 Rust/Cargo、Just 与 Docker Compose。它会分别在 `postgres`、`agent-postgres` 与 `tracing-postgres` 容器中执行 `pg_dump --format=custom`，并先写临时文件、校验 dump 含有预期数据表后才保存正式文件。账号 dump 检查 `users` 表，Agent dump 检查 `business_agents` 表，tracing dump 检查 `agent_run_events` 表。校验会消费完整目录输出，避免提前退出导致 `pipefail` 将 SIGPIPE 误报为缺表，同时保留 `pg_restore` 的真实错误。
 
 文件权限为 600；脚本只清理自己生成的 `app-*.dump`、`agent-*.dump` 与 `agent-tracing-*.dump`。`backups/` 已被 `.gitignore` 忽略。**备份不加密**，包含用户邮箱、密码哈希、Agent 消息/提示词原文与 tracing 事件；放到异地或对象存储前务必加密（如 `age`、`gpg`）并限制访问。
 
