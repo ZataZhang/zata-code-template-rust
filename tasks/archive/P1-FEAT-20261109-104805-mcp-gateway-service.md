@@ -480,7 +480,7 @@ Reviewer: human evidence is limited to the service scope and API contract. Revie
 
 #### Delivery Readiness
 
-- [~] The delivering PR carries the §9.1 API-contract review surface and the §9.2 evidence package; if no PR is created, the completion message presents the Section 9.1 surface and evidence summary. — runner-owned gate: runner PR publication（无 PR 时由执行侧完成消息呈递 §9.1 与证据摘要）
+- [x] The delivering PR carries the §9.1 API-contract review surface and the §9.2 evidence package; if no PR is created, the completion message presents the Section 9.1 surface and evidence summary.（证据：PR #5 描述呈递 MCP 服务指南与 OpenAPI §9.1 评审面；Realistic Validation 区域链接 Kc 当前 head 的结构化证据评论，含 3 项日志与文件 SHA-256；当前源码树 `kc evidence check` 3/3 PASSED）
 - [x] No unresolved executor-owned acceptance item or rollout blocker remains; no source change is made outside rust-study.（证据：所有执行侧验收项已勾选；仅 3 项 Human-Confirmed 保留待人工；改动仅在本工作树与本地临时验证环境）
 
 ## 10. Functional Requirements
