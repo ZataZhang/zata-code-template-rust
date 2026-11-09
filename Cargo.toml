@@ -11,7 +11,9 @@ publish = false
 
 # 依赖版本统一在这里声明，各 crate 用 `xxx.workspace = true` 引用，避免版本漂移。
 [workspace.dependencies]
+bytes = "1"
 futures-util = "0.3"
+sse-stream = "0.2.6"
 # 账号服务内部 crate（依赖方向见 docs/architecture/system-design.md；声明的依赖由 services/accounts/tests/architecture.rs 检查）
 tpl-api = { path = "services/accounts/crates/api" }
 tpl-core = { path = "services/accounts/crates/core" }

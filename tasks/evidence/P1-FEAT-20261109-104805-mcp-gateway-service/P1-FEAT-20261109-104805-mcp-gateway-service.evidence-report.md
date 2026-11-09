@@ -13,29 +13,33 @@
 
 ## 1. 结论
 
-- §9 全部执行侧验收项已由最终代码状态的真实入口证据覆盖；仅 3 项 Human-Confirmed 保留待人工确认，未代勾。
+- §9 的执行侧验收项由最终工作树的真实入口证据覆盖；3 项 Human-Confirmed 保持未勾选，等待人工确认。
+- `rv-1`、`rv-2`、`rv-3` 均在当前 `HEAD 222bc51bcda235d07aae4567c6da92752da2897e` 加最终工作树改动后重跑并通过；证据输出保存在本目录。
+- `just test`、`just test real`、`just ci`、响应上限定向测试、Docker 构建与隔离 Full stack smoke 均通过；远端 GitHub 检查需由 runner 在提交/推送后执行。
 - `kc evidence check --evidence tasks/evidence/P1-FEAT-20261109-104805-mcp-gateway-service`：3/3 PASSED。
-- 最终树（HEAD `48fbe38` + pre-PR 复审修复的未提交工作树改动）重跑 `just test`、`just test real`、`just ci`、`just mcp-docker-build` 均 exit 0；`rv-1`、`rv-2`、`rv-3` 在最终树重新执行并变绿，证据文件哈希不变。
-- `just mcp-up` 与 `/live`、`/ready` 在 checkpoint `b1e62f9` 上验证通过；之后的修复仅涉及响应序列化、日志过滤、endpoint 长度校验、e2e 测试与文档，不改变启动、探针或 compose 路径，最终树镜像已重建，最终树 e2e 每场景均通过真实进程 `/ready` 轮询。
+- 证据身份绑定：分支 `issue-4`，HEAD `222bc51bcda235d07aae4567c6da92752da2897e`，基线 `7be157439c698e75e0e821fe30693857338aa530`，工作树 patch SHA-256 `e8628d6343f4948d9d6d6a7cf857ab759c204b33a048c73a9545800f2185747e`。
 
 ## 2. 最终代码状态
 
 | 字段 | 值 |
 |---|---|
-| HEAD | `48fbe384e808abef833629e321b219df6578c24d`（pre-PR 复审修复为其后未提交工作树改动） |
-| 工作树指纹（sha256） | `579109453dafccfda95b2410901f51cd30b1c2480d95952631e922993f9bb4b3` |
-| 指纹范围 | tracked + untracked（`git ls-files -co --exclude-standard`），排除 `tasks/evidence/**`、本 PRD 与 `.agent-runner/**` 等记录路径；逐文件 `shasum -a 256` 后与路径组成行，`LC_ALL=C sort` 排序再汇总 sha256 |
-| 参与文件数 | 584 |
-| Rust / Cargo | 1.99.0 / 1.99.0 |
-| Docker | 29.4.2 |
-| 记录时间（UTC） | 2026-11-09T08:06:59Z |
+| 分支 | `issue-4` |
+| HEAD | `222bc51bcda235d07aae4567c6da92752da2897e` |
+| 基线 | `7be157439c698e75e0e821fe30693857338aa530`（`merge-base HEAD main`）|
+| 工作树 patch SHA-256 | `e8628d6343f4948d9d6d6a7cf857ab759c204b33a048c73a9545800f2185747e` |
+| patch 指纹范围 | `git diff --binary HEAD` 加排序后的 2 个未跟踪源码文件路径与内容 |
+| 工作树源码指纹 SHA-256 | `c9047915fbb6373a4d3d2d44450ef5ce982ca8dbb9bf8ff9e2e55153d33b2da9` |
+| 指纹文件数 | 587（tracked + untracked；排除 `tasks/evidence/**`、本 PRD 与 `.agent-runner/**`）|
+| Rust / Cargo | `rustc 1.99.0` / `cargo 1.99.0` |
+| Docker | `29.4.2` |
+| 记录时间（UTC） | 2026-11-09T09:23:50Z |
 
-证据文件在最终代码状态重跑后生成，摘要如下：
+当前 RV 文件 SHA-256：
 
 | 证据文件 | SHA-256 |
 |---|---|
-| `rv-1-authorization.txt` | `48e496cf0d1361129345502d83ef959119f59ed09b8f09421959ad247a338d16` |
-| `rv-2-remote-connection.txt` | `fa3ff53b51967ad4cf0266e99aae36bf7fed4360722ca7968318e9c56f957b94` |
+| `rv-1-authorization.txt` | `1a1a7f21c0695b43be5df5d27c9f4974b324b76cc2c47ccbe0db52f450594523` |
+| `rv-2-remote-connection.txt` | `486ba0dac763a8b8a70c3bf7f9d68c19eed69fc44523354ad6c45b4b520fbf50` |
 | `rv-3-docs-scope.txt` | `0da38920845ad099f72cce65bde234151c821879925b7edbbf3e685974a83039` |
 
 ## 3. rv-1：授权与租户隔离
@@ -85,15 +89,20 @@
 
 | 检查 | 结果 |
 |---|---|
-| `just test` | exit 0（2026-11-09，最终树） |
-| `just ci` | exit 0（fmt + clippy `-D warnings` + 全量测试 + `cargo doc -D warnings`，最终树重跑） |
-| `just test real` | exit 0（最终树重跑）；`tpl-mcp` 的 `real_authorization_scenario`、`real_remote_connection_scenario` 均通过；缺少 `TEST_MCP_DATABASE_URL` 时测试 `expect` 失败而非静默跳过 |
-| `just mcp-docker-build` | 最终树重建成功，`tpl-mcp:local` 镜像 manifest list `sha256:f5dd6de0…`（pre-PR 复审修复后重建一次通过） |
-| `just mcp-up` | 在 checkpoint `b1e62f9` 上验证：`mcp-service` 与 `mcp-postgres` 启动至 healthy；其后的修复不触及该路径 |
-| `curl http://127.0.0.1:18092/ready` | checkpoint 验证为 `{"status":"ready","checks":{"database":"ok"}}`；最终树 e2e 每场景均通过真实进程 `/ready` 轮询 |
-| `curl http://127.0.0.1:18092/live` | checkpoint 验证为 `{"status":"ok"}` |
+| `cargo check -p tpl-mcp-infrastructure` | exit 0（最终工作树）|
+| `cargo test -p tpl-mcp-infrastructure rejects_oversized_json_before_deserializing_the_response` | exit 0；无 `Content-Length` 的分块 JSON 在反序列化前超过 1 KiB 限值即被拒绝 |
+| `cargo test -p tpl-mcp --test remote_response_limit` | exit 0；跨页累计响应上限回归通过 |
+| `just test` | exit 0（完整工作区测试）|
+| `just test real` | exit 0（真实 PostgreSQL 与服务进程测试）|
+| `just ci` | exit 0（fmt、workspace clippy `-D warnings`、测试与 rustdoc）|
+| `BUILDX_CONFIG="$PWD/.agent-runner/buildx" just mcp-docker-build` | exit 0；镜像 manifest `sha256:d4f9efb6d9019ff042a17e23297c05abf223a53ddc47bde4b8fca703c80d7a1d` |
+| 隔离 Full stack（`scripts/ci-nacos-stack.py`，含 `just stack-smoke`） | exit 0；入口、认证隔离、限流、备份与恢复全部通过。`full-stack-smoke.txt` 保存运行结果 |
+| 备份 SIGPIPE 负控 | 原管道 paced 输出状态为 `141 0`，完整消费管道为 `0 0`；上游失败码 `42` 仍保留，缺表仍以 `1` 拒绝。详见 `backup-sigpipe-regression.txt` |
+| `just mcp-up` | 在 checkpoint `b1e62f9` 上启动 `mcp-service` 与 `mcp-postgres` 至 healthy；最终树 e2e 各场景继续通过真实 `/ready` 轮询 |
+| `/ready` 与 `/live` | checkpoint 上 `/ready` 返回数据库 `ok`，`/live` 返回 `status=ok`；最终树 e2e 的 `/ready` 轮询通过 |
+| `kc evidence check --evidence tasks/evidence/P1-FEAT-20261109-104805-mcp-gateway-service` | 3/3 PASSED |
 
-Compose 验证说明：共享开发 Nacos 缺少与本服务无关的 Agent/tracing 必填键，为使已文档化的 `just mcp-up` 在完整 Compose 文件插值下可执行，验证时向本地 Nacos 发布了一个临时隔离组（包含随机测试值）；验证后已删除该临时组与本地临时配置文件，未修改现有配置。MCP 三项秘密在 `compose-config` 中保持可选，缺失时由服务启动失败。
+Full stack 使用隔离 Compose 项目和专用网络；没有对共享开发数据库执行删除/恢复。远端 GitHub 检查未在本地伪报为通过，需 runner 在后续提交/推送后执行。
 
 ## 7. 变更与限制披露
 
@@ -106,3 +115,11 @@ Compose 验证说明：共享开发 Nacos 缺少与本服务无关的 Agent/trac
 - 未连接真实第三方 MCP provider；外部网络、TLS 与供应商差异不在本机证据范围内。
 - 未创建 PR；独立 verifier 结论与 PR 呈递由 runner 完成。
 - 3 项 Human-Confirmed 保持未勾选，等待用户本人审阅 §9.1 呈递与服务范围。
+
+## 8. Reviewer findings
+
+1. **Realistic Validation 证据版本过期 — 已修复。** `rv-1`、`rv-2`、`rv-3` 在当前 `HEAD 222bc51` 与当前工作树改动上重跑；`evidence.json` 和本报告记录非空的 `head`、`base`、`patch`、`branch` 及源码指纹，Kc 检查 3/3 通过。
+2. **JSON 响应上限在解析后才生效 — 已修复。** RMCP HTTP client 外包一层流式有界客户端，在 JSON bytes 进入 serde 前按配置限流；保留 RMCP 16 MiB 硬上限作为兜底，并继续限制 SSE 事件与分页累计大小。分块响应回归测试覆盖无 `Content-Length` 情况；配置与指南同步。
+3. **放行 `2001:2::/48` — 有争议，维持拒绝策略。** 本服务明确只允许全局可达的目标；IANA 登记表把 `2001:2::/48` 标为 Benchmarking 且 `Globally Reachable=False`，故它属于 `2001::/23` 默认拒绝范围。rv-2 证明注册与消费阶段均拒绝该地址。依据：[IANA IPv6 Special-Purpose Address Registry](https://www.iana.org/assignments/iana-ipv6-special-registry)。
+4. **Agent 备份校验 SIGPIPE — 已修复并有本地完整栈证据。** `db-backup.sh` 不再用 `grep -q` 提前退出；真实 TOC 的 paced 管道负控验证了旧行为 141 与修复后 0，并验证生产者错误与缺表检测仍保留。隔离 Full stack smoke（入口、认证隔离、限流、备份与恢复）通过。远端 GitHub gate 必须等 runner 提交/推送后执行。
+5. **慢上游串行阻塞 `tools/list` — 已修复。** 连接发现使用 `buffer_unordered(8)`，限制并发并隔离单连接失败；workspace CI 测试通过。

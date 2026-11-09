@@ -16,6 +16,7 @@ use tpl_mcp_core::{
 };
 use url::{Host, Url};
 
+use crate::bounded_http_client::BoundedReqwestClient;
 use crate::config::OutboundSettings;
 
 /// 关闭远端会话等待清理的时间上限。
@@ -68,7 +69,10 @@ impl RmcpRemoteClient {
         if let Some(credential) = &target.credential {
             config = config.auth_header(credential.expose().to_owned());
         }
-        let transport = StreamableHttpClientTransport::with_client(client, config);
+        let transport = StreamableHttpClientTransport::with_client(
+            BoundedReqwestClient::new(client, self.max_response_bytes),
+            config,
+        );
         match tokio::time::timeout(self.request_timeout, ().serve(transport)).await {
             Ok(Ok(service)) => Ok(service),
             Ok(Err(_error)) => {

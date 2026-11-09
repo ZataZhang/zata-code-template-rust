@@ -190,8 +190,8 @@ pub struct OutboundSettings {
     pub connect_timeout_ms: u64,
     /// 单次远端请求总超时毫秒数。
     pub request_timeout_ms: u64,
-    /// SSE 事件、工具发现分页累计定义与工具结果的字节上限（至少 1024）。
-    /// 工具发现逐页累计并在超限时停止；单个 JSON HTTP 体解析前仍采用 rmcp 固定 16 MiB 上限。
+    /// SSE 事件、JSON HTTP 响应、分页工具定义累计结果与工具结果的字节上限（至少 1024）。
+    /// JSON HTTP 响应会在反序列化前受此限制；rmcp 自身另有固定 16 MiB 硬上限。
     pub max_response_bytes: usize,
     /// 单个连接最多暴露的工具数量。
     pub max_tools_per_connection: usize,
