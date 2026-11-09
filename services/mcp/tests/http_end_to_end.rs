@@ -314,7 +314,8 @@ impl RunningGateway {
                 "APP_MCP__SECURITY__ALLOW_INSECURE_LOOPBACK",
                 allow_loopback.to_string(),
             )
-            .env("RUST_LOG", "info")
+            // 用 debug 级运行，证明即使调高日志级别也不会把工具参数、结果或凭据写入日志。
+            .env("RUST_LOG", "debug")
             .stdout(Stdio::from(stdout))
             .stderr(Stdio::from(stderr))
             .spawn()
@@ -409,6 +410,23 @@ fn assert_forbidden(result: Result<CallToolResult, ServiceError>) {
             );
         }
         other => panic!("期望 JSON-RPC 权限错误，实际：{other:?}"),
+    }
+}
+
+fn assert_upstream_unavailable(result: Result<CallToolResult, ServiceError>) {
+    match result {
+        Err(ServiceError::McpError(error)) => {
+            assert_eq!(error.code.0, -32005, "实际错误：{error:?}");
+            assert_eq!(
+                error
+                    .data
+                    .as_ref()
+                    .and_then(|data| data.get("status"))
+                    .and_then(Value::as_i64),
+                Some(502)
+            );
+        }
+        other => panic!("期望 JSON-RPC 上游不可用错误，实际：{other:?}"),
     }
 }
 
@@ -606,7 +624,7 @@ async fn real_authorization_scenario() {
         !logs.contains("upstream-result:"),
         "服务日志不得包含工具结果"
     );
-    checkpoint("服务日志不含工具参数与工具结果");
+    checkpoint("服务在 RUST_LOG=debug 下运行，日志仍不含工具参数与工具结果");
 }
 
 #[tokio::test]
@@ -652,14 +670,56 @@ async fn real_remote_connection_scenario() {
         "被拒绝的 endpoint 不得触发远端连接"
     );
     checkpoint("负控：生产安全策略拒绝 loopback HTTP，上游请求计数保持 0");
+
+    // 负控 2：HTTPS 元数据、私网、IPv4 映射与 ULA 目标通过协议检查，必须由
+    // 地址策略本身拒绝；这些目标不会触发任何上游请求。
+    for target in [
+        "https://169.254.169.254/latest/meta-data",
+        "https://100.100.100.200/latest/meta-data",
+        "https://10.0.0.1/mcp",
+        "https://192.168.1.1/mcp",
+        "https://[::ffff:a9fe:a9fe]/mcp",
+        "https://[fd00:ec2::254]/mcp",
+    ] {
+        let rejected = admin_caller
+            .apply(http.post(format!("{safe_base}/api/v1/connections")))
+            .json(&json!({
+                "name": format!("unsafe-{stamp}"),
+                "endpoint_url": target,
+                "auth_type": "bearer",
+                "credential": CREDENTIAL,
+            }))
+            .send()
+            .await
+            .expect("发送不安全 endpoint 请求");
+        assert_eq!(
+            rejected.status(),
+            StatusCode::BAD_REQUEST,
+            "目标 {target} 必须在写入阶段被拒绝"
+        );
+        let rejected_body: Value = rejected.json().await.expect("错误响应是 JSON");
+        assert_eq!(
+            rejected_body["error"]["code"],
+            json!("unsafe_endpoint"),
+            "目标 {target} 应返回 unsafe_endpoint"
+        );
+    }
+    assert_eq!(
+        upstream_requests.load(Ordering::SeqCst),
+        0,
+        "被拒绝的 endpoint 不得触发远端连接"
+    );
+    checkpoint(
+        "负控：HTTPS 元数据、私网、IPv4 映射与 ULA 地址被地址策略拒绝为 unsafe_endpoint，上游请求计数保持 0",
+    );
     drop(safe_gateway);
 
-    // 负控 2：私网地址同样在写入阶段被拒绝，且不会加密或持久化凭据。
+    // 负控 3：开发 loopback 模式放宽的只是 loopback，私网地址仍被拒绝。
     let unsafe_create = admin_caller
         .apply(http.post(format!("{base}/api/v1/connections")))
         .json(&json!({
             "name": format!("unsafe-{stamp}"),
-            "endpoint_url": "http://10.0.0.1/mcp",
+            "endpoint_url": "https://10.0.0.1/mcp",
             "auth_type": "bearer",
             "credential": CREDENTIAL,
         }))
@@ -669,7 +729,7 @@ async fn real_remote_connection_scenario() {
     assert_eq!(unsafe_create.status(), StatusCode::BAD_REQUEST);
     let unsafe_body: Value = unsafe_create.json().await.expect("错误响应是 JSON");
     assert_eq!(unsafe_body["error"]["code"], json!("unsafe_endpoint"));
-    checkpoint("负控：私网地址 http://10.0.0.1/mcp 在写入阶段被拒绝为 unsafe_endpoint");
+    checkpoint("负控：开发 loopback 模式仍拒绝私网地址 https://10.0.0.1/mcp");
 
     // 管理员注册远端连接并提交凭据；响应只返回 configured 状态。
     let created = admin_caller
@@ -786,6 +846,52 @@ async fn real_remote_connection_scenario() {
     checkpoint("服务重启后新进程从同一 PostgreSQL 读取连接、解密凭据并完成真实 tools/call");
     let _ = client.cancel().await;
 
+    // Oracle 5：一条真实不可用的上游只跳过该连接，健康连接继续可用。
+    let dead_port = free_port();
+    let dead_created = admin_caller
+        .apply(http.post(format!("{base_after_restart}/api/v1/connections")))
+        .json(&json!({
+            "name": format!("dead-{stamp}"),
+            "endpoint_url": format!("http://127.0.0.1:{dead_port}/mcp"),
+            "auth_type": "none",
+        }))
+        .send()
+        .await
+        .expect("创建不可用连接");
+    assert_eq!(dead_created.status(), StatusCode::CREATED);
+    let dead_created: Value = dead_created.json().await.expect("创建响应是 JSON");
+    let dead_connection_id = Uuid::parse_str(dead_created["id"].as_str().expect("响应包含连接 ID"))
+        .expect("连接 ID 是 UUID");
+    let dead_assignment = admin_caller
+        .apply(http.put(format!(
+            "{base_after_restart}/api/v1/connections/{dead_connection_id}/assignments/user/user-allowed"
+        )))
+        .send()
+        .await
+        .expect("授权不可用连接");
+    assert_eq!(dead_assignment.status(), StatusCode::NO_CONTENT);
+    let dead_tool = exposed_tool_name(dead_connection_id, UPSTREAM_TOOL);
+
+    let client = gateway_client(&base_after_restart, &allowed_user).await;
+    let tools = client.list_all_tools().await.expect("列出工具");
+    assert_eq!(tools.len(), 1, "不可用连接不得提供工具；实际：{tools:?}");
+    assert_eq!(tools[0].name.as_ref(), expected_tool);
+    assert_upstream_unavailable(call_gateway_tool(&client, &dead_tool, json!({})).await);
+    let result = call_gateway_tool(&client, &expected_tool, json!({ "city": city }))
+        .await
+        .expect("不可用连接存在时健康连接仍可调用");
+    let text = result
+        .content
+        .iter()
+        .find_map(|content| match content {
+            ContentBlock::Text(text) => Some(text.text.clone()),
+            _ => None,
+        })
+        .expect("工具结果包含文本");
+    assert_eq!(text, format!("upstream-result:{UPSTREAM_TOOL}:{city}"));
+    checkpoint("负控：真实不可用的上游连接不提供工具，调用返回 -32005/502；健康连接仍可发现和调用");
+    let _ = client.cancel().await;
+
     // 两次进程的日志都不得包含凭据或工具参数。
     let combined_logs = format!("{first_logs}\n{}", restarted.logs());
     assert!(
@@ -797,7 +903,7 @@ async fn real_remote_connection_scenario() {
         !combined_logs.contains("upstream-result:"),
         "服务日志不得包含工具结果"
     );
-    checkpoint("两次服务进程的日志均不含凭据明文、工具参数与工具结果");
+    checkpoint("两次服务进程（RUST_LOG=debug）的日志均不含凭据明文、工具参数与工具结果");
 
     pool.close().await;
 }

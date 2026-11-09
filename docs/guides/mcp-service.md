@@ -131,6 +131,8 @@ OpenAPI 文件：[`services/mcp/openapi.yaml`](../../services/mcp/openapi.yaml)�
 - API 响应只返回 `credential_configured`；日志、错误和 `Debug` 输出都不包含凭据明文。
 - 出站默认只允许 HTTPS，并拒绝 loopback、私网、链路本地、组播、保留地址与云元数据地址；DNS 解析后固定地址，避免重绑定。
 - 不跟随重定向；连接超时默认 5 秒，请求总超时默认 15 秒，响应/事件上限默认 1 MiB，单连接最多暴露 256 个工具。
+- 响应上限对 SSE 事件在解析前生效；对非流式 JSON 响应，rmcp 内置客户端在解析前固定限制为 16 MiB，`outbound.max_response_bytes` 在反序列化后再次校验工具发现与调用结果的大小。
+- 日志固定把 `rmcp` 目标压回 `info`：即使设置 `RUST_LOG=debug`，也不会输出完整的 JSON-RPC 工具参数或工具结果。
 - 仅开发环境可通过 `security.allow_insecure_loopback = true` 允许访问 loopback 上的 HTTP 测试 MCP server；生产必须保持 `false`。
 
 ## 7. 配置

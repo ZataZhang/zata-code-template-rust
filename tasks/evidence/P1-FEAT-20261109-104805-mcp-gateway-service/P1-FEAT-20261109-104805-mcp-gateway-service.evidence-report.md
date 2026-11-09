@@ -15,27 +15,27 @@
 
 - §9 全部执行侧验收项已由最终代码状态的真实入口证据覆盖；仅 3 项 Human-Confirmed 保留待人工确认，未代勾。
 - `kc evidence check --evidence tasks/evidence/P1-FEAT-20261109-104805-mcp-gateway-service`：3/3 PASSED。
-- 最终树（checkpoint `b1e62f9` + 复审修复）重跑 `just ci`、`just test real`、`just mcp-docker-build` 均 exit 0；`rv-1`、`rv-2` 负控重新打红后恢复变绿。
-- `just mcp-up` 与 `/live`、`/ready` 在 checkpoint `b1e62f9` 上验证通过；之后的复审修复仅涉及测试与请求 DTO 的 `Debug` 脱敏，不改变启动、探针或 compose 路径，最终树镜像已重建。
+- 最终树（HEAD `adc98b6` + verifier 复审修复的未提交工作树改动）重跑 `just test`、`just test real`、`just ci`、`just mcp-docker-build` 均 exit 0；`rv-1`、`rv-2` 负控打红后恢复变绿，并在最终树重捕证据。
+- `just mcp-up` 与 `/live`、`/ready` 在 checkpoint `b1e62f9` 上验证通过；之后的修复仅涉及响应序列化、日志过滤、e2e 测试与文档，不改变启动、探针或 compose 路径，最终树镜像已重建，最终树 e2e 每场景均通过真实进程 `/ready` 轮询。
 
 ## 2. 最终代码状态
 
 | 字段 | 值 |
 |---|---|
-| HEAD | `b1e62f998bb079ca9840ac6e383253db00e4e790`（WIP checkpoint；复审修复为其后未提交工作树改动） |
-| 工作树指纹（sha256） | `6feb9fb58b133a04200f8e96fe0dbf5001e9e63c0b2472809609c3480d042fe4` |
+| HEAD | `adc98b65ece5e23ff9478d010871e035dd51d018`（verifier 复审修复为其后未提交工作树改动） |
+| 工作树指纹（sha256） | `06cdfdf69dc801c151bffa8326731b827e3e59fa8777218e1a6919486aaee2c6` |
 | 指纹范围 | tracked + untracked（`git ls-files -co --exclude-standard`），排除 `tasks/evidence/**`、本 PRD 与 `.agent-runner/**` 等记录路径；按“每文件内容哈希 + 路径”排序后汇总 |
-| 参与文件数 | 583 |
+| 参与文件数 | 584 |
 | Rust / Cargo | 1.99.0 / 1.99.0 |
 | Docker | 29.4.2 |
-| 记录时间（UTC） | 2026-11-09T05:37:33Z |
+| 记录时间（UTC） | 2026-11-09T06:15:59Z |
 
 证据文件在最终代码状态重跑后生成，摘要如下：
 
 | 证据文件 | SHA-256 |
 |---|---|
-| `rv-1-authorization.txt` | `8cefd54f2f555c9a42770269ca4e801980d536df7119109c6305bddbef83a774` |
-| `rv-2-remote-connection.txt` | `280aa43a45776ae9fb7b0c6dd28dd77093d6285791580e2e89ed0905832c93d7` |
+| `rv-1-authorization.txt` | `48e496cf0d1361129345502d83ef959119f59ed09b8f09421959ad247a338d16` |
+| `rv-2-remote-connection.txt` | `fa3ff53b51967ad4cf0266e99aae36bf7fed4360722ca7968318e9c56f957b94` |
 | `rv-3-docs-scope.txt` | `0da38920845ad099f72cce65bde234151c821879925b7edbbf3e685974a83039` |
 
 ## 3. rv-1：授权与租户隔离
@@ -48,7 +48,7 @@
   - 获准用户 `tools/list` 只看到带连接前缀的 `lookup_weather`，`tools/call` 返回上游结果。
   - 同租户未授权用户与另一租户同名用户的 `tools/list` 为空，`tools/call` 返回 `-32003` / HTTP 403。
   - 第二消费服务在同一租户字符串下登记连接并授权同名用户后，双方用户各自只看到、且只能调通自己的连接；跨消费服务调用返回 `-32003` / HTTP 403。
-  - 服务日志不含工具参数或工具结果。
+  - 服务以 `RUST_LOG=debug` 运行，日志仍不含工具参数或工具结果。
 - 负控：测试边界临时把未授权用户断言反转为“必须看到工具”，实际失败为 `assertion failed`、`test result: FAILED`、退出码 101；恢复后同一条命令变绿（最终树重跑确认）。
 - 限制：远端 provider 为本地 fake，未覆盖真实第三方网络的 TLS/证书差异。
 
@@ -58,13 +58,16 @@
 - 入口：`just mcp-e2e --scenario remote-connection`。
 - 关键检查点：
   - 生产安全策略在写入阶段拒绝 loopback endpoint，假上游请求计数保持 0。
-  - 私网 `http://10.0.0.1/mcp` 在写入阶段返回 400 `unsafe_endpoint`。
+  - HTTPS 云元数据（`169.254.169.254`、`100.100.100.200`）、私网（`10.0.0.1`、`192.168.1.1`）、IPv4 映射（`::ffff:a9fe:a9fe`）与 ULA（`fd00:ec2::254`）地址均在写入阶段返回 400 `unsafe_endpoint`，上游请求计数保持 0。
+  - 开发 loopback 模式仍拒绝私网 `https://10.0.0.1/mcp`。
   - 创建响应只包含 `credential_configured=true`，不返回凭据明文。
   - PostgreSQL 中只保存 57 字节密文，且不含凭据明文。
   - 管理 API 通过真实 rmcp 握手发现 `lookup_weather`。
   - 服务进程重启后，新进程从同一数据库读取连接、解密凭据，并由新 MCP 客户端完成 `tools/list` 与 `tools/call`。
-  - 两次进程日志均不含凭据、工具参数或工具结果。
-- 负控：测试边界把 loopback 拒绝的期望状态从 400 改为 201，实际失败为 `left: 400`、`right: 201`、`test result: FAILED`、退出码 101；恢复后同一条命令变绿。
+  - 真实不可用的上游连接不提供工具、调用返回 `-32005` / HTTP 502，健康连接仍可发现和调用。
+  - 两次进程在 `RUST_LOG=debug` 下的日志均不含凭据、工具参数或工具结果。
+- 负控 A：临时把 endpoint 地址策略改为全部放行，地址矩阵首个目标 `https://169.254.169.254/latest/meta-data` 返回 201 而非 400，实际失败为 `目标 ... 必须在写入阶段被拒绝`、`left: 201`、`right: 400`、退出码 101；恢复后变绿。
+- 负控 B：临时移除 gateway 对单个连接失败的跳过逻辑，不可用上游使 `tools/list` 整体失败，实际错误为 `-32005`、退出码 101；恢复后变绿。
 - 限制：上游为本地 fake；未验证真实外部 provider 的网络差异与主密钥轮换后的旧密文行为。
 
 ## 5. rv-3：发布契约范围审查
@@ -76,7 +79,7 @@
   - 指南显式覆盖连接管理、凭据与 `/mcp`。
   - 指南显式排除公开 MCP 市场、消费方 UI、`stdio`、HTTP+SSE 与 `prompts`/`resources`。
 - 负控：临时从 OpenAPI 删除 `/mcp` 后，脚本输出 `失败：OpenAPI 缺少路径 /mcp` 并以非零退出；恢复后变绿。
-- 限制：自动化只核对路径、方法与关键词，文档措辞清晰度由人工 reviewer 判断。
+- 限制：自动化只核对路径、方法与关键词，文档措辞清晰度由人工 reviewer 判定。
 
 ## 6. 构建与部署验证
 
@@ -85,8 +88,8 @@
 | `just test` | exit 0（2026-11-09，最终树） |
 | `just ci` | exit 0（fmt + clippy `-D warnings` + 全量测试 + `cargo doc -D warnings`，最终树重跑） |
 | `just test real` | exit 0（最终树重跑）；`tpl-mcp` 的 `real_authorization_scenario`、`real_remote_connection_scenario` 均通过；缺少 `TEST_MCP_DATABASE_URL` 时测试 `expect` 失败而非静默跳过 |
-| `just mcp-docker-build` | 最终树重建成功，`tpl-mcp:local` 镜像 manifest `sha256:5512efa4…` |
-| `just mcp-up` | 在 checkpoint `b1e62f9` 上验证：`mcp-service` 与 `mcp-postgres` 启动至 healthy；复审修复不触及该路径 |
+| `just mcp-docker-build` | 最终树重建成功，`tpl-mcp:local` 镜像 manifest `sha256:ee96d413…`（首次因 Docker Hub TLS 握手超时失败，重试后成功） |
+| `just mcp-up` | 在 checkpoint `b1e62f9` 上验证：`mcp-service` 与 `mcp-postgres` 启动至 healthy；其后的修复不触及该路径 |
 | `curl http://127.0.0.1:18092/ready` | checkpoint 验证为 `{"status":"ready","checks":{"database":"ok"}}`；最终树 e2e 每场景均通过真实进程 `/ready` 轮询 |
 | `curl http://127.0.0.1:18092/live` | checkpoint 验证为 `{"status":"ok"}` |
 
@@ -98,6 +101,7 @@ Compose 验证说明：共享开发 Nacos 缺少与本服务无关的 Agent/trac
 - `compose-config` 原先不识别 MCP 键，`just mcp-up` 无法使用；已补充 `MCP_DB_PASSWORD`、`MCP_CREDENTIAL_KEY_BASE64`、`MCP_CONSUMERS_JSON`、`MCP_PORT` 白名单与 `MCP_PORT` 校验，并保持 MCP 秘密非必填。
 - 全仓依赖守卫原先未登记 `mcp-*` 层，`just test` 失败；已登记并通过。
 - pre-PR 复审修复：`CreateConnectionRequest`、`SetCredentialRequest` 手写 `Debug` 以隐藏凭据明文，并增加脱敏单测；e2e 增加第二消费服务的独立 token/签名密钥，验证同租户字符串下跨消费服务的连接与调用隔离。
+- verifier 复审修复：`ConnectionResponse` 的 `created_at`/`updated_at` 改为 RFC 3339 并加回归测试；rv-2 增加 HTTPS 云元数据、私网、IPv4 映射与 ULA 地址矩阵与开发 loopback 模式私网拒绝；e2e 增加真实不可用上游与健康连接并存的失败隔离场景；日志初始化把 `rmcp` 目标压回 `info`，e2e 以 `RUST_LOG=debug` 运行并断言无载荷泄漏；指南补充 JSON 响应在解析前的 16 MiB 内置上限与 rmcp 日志固定说明。负控为临时注入并用 `cmp` 核对恢复，未保留测试专用生产开关。
 - 未连接真实第三方 MCP provider；外部网络、TLS 与供应商差异不在本机证据范围内。
 - 未创建 PR；独立 verifier 结论与 PR 呈递由 runner 完成。
 - 3 项 Human-Confirmed 保持未勾选，等待用户本人审阅 §9.1 呈递与服务范围。

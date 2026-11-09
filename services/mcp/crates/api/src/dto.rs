@@ -181,9 +181,11 @@ pub struct ConnectionResponse {
     pub status: &'static str,
     /// 创建者主体。
     pub created_by: String,
-    /// 创建时间。
+    /// 创建时间（RFC 3339，与 OpenAPI `format: date-time` 一致）。
+    #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,
-    /// 最后更新时间。
+    /// 最后更新时间（RFC 3339）。
+    #[serde(with = "time::serde::rfc3339")]
     pub updated_at: OffsetDateTime,
 }
 
@@ -265,6 +267,25 @@ mod tests {
         assert!(!serialized.to_string().contains("ciphertext-bytes"));
         assert_eq!(object.get("auth_type"), Some(&json!("bearer")));
         assert_eq!(object.get("status"), Some(&json!("active")));
+    }
+
+    #[test]
+    fn timestamps_serialize_as_rfc3339_strings() {
+        let mut connection = connection_with_ciphertext();
+        connection.created_at =
+            OffsetDateTime::from_unix_timestamp(1_700_000_000).expect("测试时间戳有效");
+        connection.updated_at = connection.created_at;
+
+        let response = ConnectionResponse::from(&connection);
+        let serialized = serde_json::to_value(&response).expect("响应可序列化");
+        assert_eq!(
+            serialized.get("created_at"),
+            Some(&json!("2023-11-14T22:13:20Z"))
+        );
+        assert_eq!(
+            serialized.get("updated_at"),
+            Some(&json!("2023-11-14T22:13:20Z"))
+        );
     }
 
     #[test]

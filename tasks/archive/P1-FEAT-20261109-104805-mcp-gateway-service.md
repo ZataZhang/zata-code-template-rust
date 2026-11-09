@@ -456,15 +456,15 @@ Reviewer: human evidence is limited to the service scope and API contract. Revie
 #### Behavior Acceptance
 
 - [x] REST management operations create, update, disable, delete, inspect and discover remote Streamable HTTP MCP connections for the authenticated consumer and tenant.（证据：`rv-2-remote-connection.txt` 覆盖创建、检查、工具发现与真实调用；`services/mcp/tests/http_end_to_end.rs` 与 core 用例覆盖更新/停用/删除；`rv-3-docs-scope.txt` 校验 OpenAPI 与路由一致）
-- [x] Credential create/update responses return only configured status; persisted credential bytes are encrypted; logs, errors and Debug output contain neither credential nor tool arguments/results.（证据：`rv-2-remote-connection.txt` 的 `credential_configured`、PostgreSQL 密文断言与进程日志扫描；`services/mcp/crates/infrastructure` 的 Debug 脱敏与密文单测）
+- [x] Credential create/update responses return only configured status; persisted credential bytes are encrypted; logs, errors and Debug output contain neither credential nor tool arguments/results.（证据：`rv-2-remote-connection.txt` 的 `credential_configured`、PostgreSQL 密文断言与 `RUST_LOG=debug` 进程日志扫描；`services/mcp/crates/infrastructure` 的 Debug 脱敏、密文与 `rmcp` 日志重定向单测）
 - [x] Assignment to a user or group exposes namespaced tools in tools/list and tools/call rechecks access with a fresh caller context.（证据：`rv-1-authorization.txt` 中获准用户成功、未授权用户与跨租户被拒；core 用例验证 `tools/call` 重新查询授权）
-- [x] One failing upstream is omitted without removing tools from healthy upstreams; duplicate upstream tool names remain unambiguous.（证据：`cargo test -p tpl-mcp-core` 的 `tool_listing_is_namespaced_and_skips_failing_connections` 断言失败连接被跳过、健康连接工具保留、不同连接同名工具前缀不同）
-- [x] Endpoint validation runs on both write and consumption paths, forbids unsafe destinations and redirects, and fails closed on DNS or identity errors.（证据：`rv-2-remote-connection.txt` 的 loopback/private 拒绝与零上游请求；core 用例 `consumption_revalidates_endpoint_and_fails_closed` 验证消费路径重新校验且不泄露凭据）
+- [x] One failing upstream is omitted without removing tools from healthy upstreams; duplicate upstream tool names remain unambiguous.（证据：`rv-2-remote-connection.txt` 的真实不可用上游检查点——不可用连接不提供工具、调用返回 -32005/502，健康连接仍可发现和调用；`cargo test -p tpl-mcp-core` 的 `tool_listing_is_namespaced_and_skips_failing_connections` 断言失败连接被跳过、健康连接工具保留、不同连接同名工具前缀不同）
+- [x] Endpoint validation runs on both write and consumption paths, forbids unsafe destinations and redirects, and fails closed on DNS or identity errors.（证据：`rv-2-remote-connection.txt` 的 HTTPS 云元数据、私网、IPv4 映射与 ULA 地址矩阵均返回 400 `unsafe_endpoint` 且上游请求计数保持 0，开发 loopback 模式仍拒绝私网目标；core 用例 `consumption_revalidates_endpoint_and_fails_closed` 验证消费路径重新校验且不泄露凭据）
 
 #### Documentation Acceptance
 
 - [x] services/mcp/openapi.yaml matches the REST management contract and the actual service router.（证据：`rv-3-docs-scope.txt` 逐条比对 8 个必需路径/方法与 `services/mcp/crates/api/src/routes/*.rs` 的路由字面量，并确认 `/mcp` 由 `nest_service("/mcp")` 挂载）
-- [x] docs/guides/mcp-service.md explains consumer identity, credentials, configuration, API, local startup, MCP transport, failure handling, and explicit non-goals.（证据：`docs/guides/mcp-service.md` §1–§8；`rv-3-docs-scope.txt` 校验范围/非目标关键词与 API 覆盖）
+- [x] docs/guides/mcp-service.md explains consumer identity, credentials, configuration, API, local startup, MCP transport, failure handling, and explicit non-goals.（证据：`docs/guides/mcp-service.md` §1–§8，包含响应体上限与 `rmcp` 日志固定说明；`rv-3-docs-scope.txt` 校验范围/非目标关键词与 API 覆盖）
 - [x] Configuration examples show non-secret defaults commented and secrets as empty variables; no real credentials are added.（证据：`services/mcp/.env.example`、`services/mcp/config.toml`、根 `.env.example`；MCP 秘密变量均为空值，未写入真实凭据）
 - [x] docs/architecture/system-design.md, docs/ai-standards/architecture.md, and docs/guides/mcp-service.md agree on data ownership and deployment.（证据：三份文档与 `docs/guides/deployment.md`、`docs/guides/configuration.md` 对独立数据库、可选 `mcp` profile、端口 8092 与秘密注入的描述一致）
 
@@ -520,14 +520,23 @@ Reviewer: human evidence is limited to the service scope and API contract. Revie
 ### Final Reconciliation
 
 - Interpretation: FR-1 至 FR-6 已按 §1 解读与决策 D-01～D-03 实现：独立 `services/mcp` 服务拥有自己的 PostgreSQL 库、迁移、镜像与二进制；消费方 Bearer + 短时签名用户上下文；仅提供连接管理与 Streamable HTTP 网关，不含市场目录或消费方 UI。实现使用运行时 SQL（无 `.sqlx/` 编译期元数据），MCP Compose 秘密在 `compose-config` 中保持可选、由服务启动时 fail-fast 校验。
-- Public behavior and contracts: 管理 REST 路径、错误码与 `/mcp` Streamable HTTP 网关由 `services/mcp/openapi.yaml` 与 `docs/guides/mcp-service.md` 一致描述；rv-1/rv-2/rv-3 通过真实入口核对授权、凭据写入不可读、出站安全、进程重启后的调用与契约范围。变更树与 Change Log 已记录运行时 SQL、Compose 键白名单与依赖守卫登记。
+- Public behavior and contracts: 管理 REST 路径、错误码与 `/mcp` Streamable HTTP 网关由 `services/mcp/openapi.yaml` 与 `docs/guides/mcp-service.md` 一致描述，管理响应时间戳按 `format: date-time` 输出 RFC 3339；rv-1/rv-2/rv-3 通过真实入口核对授权、凭据写入不可读、出站安全、失败隔离、进程重启后的调用与契约范围。变更树与 Change Log 已记录运行时 SQL、Compose 键白名单、依赖守卫登记与 verifier 复审修复。
 - Related PRD status: 无上游 PRD 依赖；Agent 服务文档仅作架构参考，未修改其代码或契约。
-- Requirements and risks: 凭据写入后不可读、endpoint 在写入与消费两条路径都重新校验、单条上游失败隔离与同名工具前缀消歧均有真实入口或 core 测试证据。已知限制：MCP 数据卷不包含在默认三库备份命令中，需按 `docs/guides/deployment.md` 单独备份；真实部署仍需运维在 Nacos 中提供 MCP 三项秘密。
+- Requirements and risks: 凭据写入后不可读、endpoint 在写入与消费两条路径都重新校验、HTTPS 地址矩阵与失败隔离均有真实入口证据；`RUST_LOG=debug` 下日志仍不含凭据、工具参数与结果。已知限制：MCP 数据卷不包含在默认三库备份命令中，需按 `docs/guides/deployment.md` 单独备份；真实部署仍需运维在 Nacos 中提供 MCP 三项秘密。
 - Validation blocker: 无。所有执行侧验证均已在本机真实入口完成。
 - Validation follow-up: 3 项 Human-Confirmed 待人工验收；独立 verifier 结论由 runner 在归档门禁中给出。
 - Acceptance Status Banner: 🧍 待人工验收。
 
 ## 14. Change Log
+
+### 2026-11-09 · verifier 复审修复（时间戳契约、地址策略证据、失败隔离 e2e、debug 日志）
+
+- 类型：实现、测试与文档修正
+- 原文：独立 verifier 复审指出：管理 DTO 时间戳不是 RFC 3339；rv-2 只用 `http://` 私网目标，无法区分协议检查与地址策略；失败隔离只有 core 单测、缺少真实 e2e；`RUST_LOG=debug` 时 rmcp 会打印完整 JSON-RPC 工具参数/结果；JSON 响应体上限未说明 rmcp 内置客户端的预解析限制。
+- 变更后：`ConnectionResponse` 的 `created_at`/`updated_at` 以 RFC 3339 序列化并加回归测试；rv-2 增加 HTTPS 云元数据、私网、IPv4 映射与 ULA 地址矩阵（上游请求计数保持 0）与开发 loopback 模式拒绝私网目标；e2e 增加真实不可用上游连接与健康连接并存的场景，断言调用返回 -32005/502 且健康工具仍可发现、调用；日志初始化把 `rmcp` 目标压回 `info`，e2e 以 `RUST_LOG=debug` 运行并断言日志不含凭据、工具参数与结果；指南补充 JSON 响应在解析前的 16 MiB 内置上限与 rmcp 日志固定说明。
+- 原因：让公开契约的时间戳格式与实际响应一致；让地址策略与失败隔离拥有能真实变红的端到端证据；避免调高日志级别时泄漏 MCP 载荷。
+- 影响：仅 MCP 服务的响应序列化、日志过滤、e2e 测试与指南；公开 API 路径、错误码与数据模型不变；负控为临时注入并已恢复，无测试专用生产开关。
+- 审核：执行侧自检；rv-1/rv-2/rv-3 在最终树重跑，`kc evidence check` 3/3 PASSED；负控分别以断言反转、地址策略放行、移除失败跳过、删除 `/mcp` 契约变红后恢复变绿。
 
 ### 2026-11-09 · pre-PR reviewer 限流恢复
 
