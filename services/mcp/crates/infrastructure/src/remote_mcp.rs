@@ -4,7 +4,7 @@ use std::future::Future;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use rmcp::model::{CallToolRequestParams, ErrorCode};
+use rmcp::model::{CallToolRequestParams, ErrorCode, PaginatedRequestParams};
 use rmcp::service::RunningService;
 use rmcp::transport::streamable_http_client::{
     StreamableHttpClientTransport, StreamableHttpClientTransportConfig,
@@ -123,35 +123,56 @@ impl RemoteMcpClient for RmcpRemoteClient {
         &self,
         target: &RemoteTarget,
     ) -> Result<Vec<RemoteToolDefinition>, RemoteMcpError> {
-        let discovered = self
-            .with_session(target, |mut service| async move {
-                let listed = service
-                    .list_all_tools()
-                    .await
-                    .map_err(map_discovery_error)?;
-                close_session(&mut service).await;
-                Ok(listed)
-            })
-            .await?;
+        self.with_session(target, |mut service| async move {
+            let discovery_result = async {
+                let mut next_cursor = None;
+                let mut total_bytes = 0usize;
+                let mut definitions = Vec::new();
 
-        let mut total_bytes = 0usize;
-        let mut definitions = Vec::with_capacity(discovered.len());
-        for tool in discovered {
-            let definition = serde_json::to_value(&tool).map_err(|_| RemoteMcpError::Protocol)?;
-            total_bytes = total_bytes.saturating_add(self.encoded_size(&definition)?);
-            if total_bytes > self.max_response_bytes {
-                tracing::debug!(
-                    connection_id = %target.connection_id,
-                    "远端 tools/list 结果超出出站大小上限"
-                );
-                return Err(RemoteMcpError::Protocol);
+                loop {
+                    let page = service
+                        .list_tools(Some(
+                            PaginatedRequestParams::default().with_cursor(next_cursor),
+                        ))
+                        .await
+                        .map_err(map_discovery_error)?;
+                    next_cursor = page.next_cursor;
+
+                    for tool in page.tools {
+                        // 在把工具追加到跨页结果前检查累计值，避免 list_all_tools
+                        // 先保留所有分页后才按配置上限拒绝。
+                        let encoded_tool =
+                            serde_json::to_vec(&tool).map_err(|_| RemoteMcpError::Protocol)?;
+                        total_bytes = total_bytes.saturating_add(encoded_tool.len());
+                        if total_bytes > self.max_response_bytes {
+                            tracing::debug!(
+                                connection_id = %target.connection_id,
+                                "远端 tools/list 结果超出出站大小上限"
+                            );
+                            return Err(RemoteMcpError::Protocol);
+                        }
+                        drop(encoded_tool);
+
+                        let definition =
+                            serde_json::to_value(&tool).map_err(|_| RemoteMcpError::Protocol)?;
+                        definitions.push(RemoteToolDefinition {
+                            name: tool.name.to_string(),
+                            definition,
+                        });
+                    }
+
+                    if next_cursor.is_none() {
+                        break;
+                    }
+                }
+
+                Ok(definitions)
             }
-            definitions.push(RemoteToolDefinition {
-                name: tool.name.to_string(),
-                definition,
-            });
-        }
-        Ok(definitions)
+            .await;
+            close_session(&mut service).await;
+            discovery_result
+        })
+        .await
     }
 
     async fn call_tool(
